@@ -1,0 +1,65 @@
+# ─────────────────────────────────────────────
+#  Sistema de Gestión Documental
+#  Frontend: NOVA_FT (Vite + React)
+#  Backend:  backned_sistema_gestion_documental (Django)
+# ─────────────────────────────────────────────
+
+# ── Variables de entorno / secretos ──
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── Node / Frontend ──
+node_modules/
+dist/
+dist-ssr/
+build/
+.vite/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ── Python / Django ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+celerybeat-schedule
+
+# ── Logs ──
+logs/
+*.log
+
+# ── IDE / Editores ──
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.suo
+
+# ── Sistema operativo ──
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Claude Code (config local) ──
+.claude/settings.local.json
+
+# ── graphify ──
+graphify-out/
