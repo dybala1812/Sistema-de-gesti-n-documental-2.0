@@ -1,4 +1,4 @@
-- [ ] {{PREFIJO_TAREAS}}-XXX: <qué se construye>
+- [ ] SGD-XXX: <qué se construye>
   Spec: ia_contexto/spec/requirements.md#rf-xxx
   Tipo: feature
   Prioridad: media

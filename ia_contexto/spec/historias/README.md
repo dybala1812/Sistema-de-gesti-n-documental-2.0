@@ -22,5 +22,5 @@ Criterios:
 - Dado …, cuando …, entonces ….
 Contrato: `POST /api/...` (request / response / errores)
 Pruebas: TEST-RF-xxx-01 …
-Tareas: {{PREFIJO_TAREAS}}-0XXa (backend), {{PREFIJO_TAREAS}}-0XXb (frontend), {{PREFIJO_TAREAS}}-0XXc (pruebas)
+Tareas: SGD-0XXa (backend), SGD-0XXb (frontend), SGD-0XXc (pruebas)
 ```

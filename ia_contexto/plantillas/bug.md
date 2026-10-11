@@ -1,4 +1,4 @@
-- [ ] {{PREFIJO_TAREAS}}-XXX: <qué falla>
+- [ ] SGD-XXX: <qué falla>
   Tipo: bug
   Prioridad: alta
   Pasos para reproducir: 1. … 2. …
