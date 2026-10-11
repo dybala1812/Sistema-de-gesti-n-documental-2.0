@@ -1,6 +1,6 @@
-# Responsive, Móvil y Accesibilidad — {{PROYECTO}}
+# Responsive, Móvil y Accesibilidad — Sistema de Gestión Documental (SGD)
 
-Plataforma: {{PLATAFORMA}}.
+Plataforma: Web responsive (React) + PWA móvil para escaneo.
 
 ## Responsive (web)
 

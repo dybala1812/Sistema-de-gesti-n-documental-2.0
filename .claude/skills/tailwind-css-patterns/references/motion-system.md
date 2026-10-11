@@ -1,4 +1,4 @@
-# Motion System — {{PROYECTO}}
+# Motion System — Sistema de Gestión Documental (SGD)
 
 Plantilla de sistema de movimiento. `project-setup` reemplaza los `{{...}}`; si el proyecto no usa Tailwind, usa solo la parte de CSS puro.
 
@@ -11,7 +11,7 @@ Plantilla de sistema de movimiento. `project-setup` reemplaza los `{{...}}`; si 
 - Respetar siempre `prefers-reduced-motion` (`motion-safe:` en Tailwind y fallback global en CSS).
 - En mobile, ninguna animacion debe mover la barra inferior, cortar botones ni bloquear el uso con una mano.
 
-## Tokens (Tailwind v4, dentro del `@theme` de `{{RUTA_ESTILOS_GLOBALES}}`)
+## Tokens (Tailwind v4, dentro del `@theme` de `NOVA_FT/src/styles/theme.css`)
 
 ```css
 @theme {
@@ -52,7 +52,7 @@ Plantilla de sistema de movimiento. `project-setup` reemplaza los `{{...}}`; si 
 @media (hover: hover) {
   .card-hover:hover {
     transform: translateY(-2px);
-    border-color: color-mix(in srgb, {{COLOR_ACENTO}} 55%, transparent);
+    border-color: color-mix(in srgb, var(--secondary) 55%, transparent);
     box-shadow: 0 16px 44px rgba(0, 0, 0, .18);
   }
 }

@@ -1,6 +1,6 @@
 ---
 name: git
-description: Flujo de trabajo Git de {{PROYECTO}} — ramas, Conventional Commits con referencia a tareas, pull requests, hotfix y reversión. Úsala antes de crear ramas, hacer commits, abrir PRs o fusionar.
+description: Flujo de trabajo Git de Sistema de Gestión Documental (SGD) — ramas, Conventional Commits con referencia a tareas, pull requests, hotfix y reversión. Úsala antes de crear ramas, hacer commits, abrir PRs o fusionar.
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
@@ -12,8 +12,8 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 |---|---|---|
 | `{{RAMA_PRODUCCION}}` | Código desplegado y funcionando en producción | **Nadie hace commit directo.** Solo recibe merges desde `{{RAMA_DESARROLLO}}` (release) o desde `hotfix/*` |
 | `{{RAMA_DESARROLLO}}` | Integración de todas las tareas terminadas; base de las ramas nuevas | Cada tarea se fusiona aquí antes de considerarse lista |
-| `feature/{{PREFIJO_TAREAS}}-XXX-descripcion` | Una rama por tarea o historia. Ej.: `feature/{{PREFIJO_TAREAS}}-001-login` | Se crea desde `{{RAMA_DESARROLLO}}` y vuelve a ella por pull request |
-| `fix/{{PREFIJO_TAREAS}}-XXX-descripcion` | Corrección no urgente | Igual que `feature/` |
+| `feature/SGD-XXX-descripcion` | Una rama por tarea o historia. Ej.: `feature/SGD-001-login` | Se crea desde `{{RAMA_DESARROLLO}}` y vuelve a ella por pull request |
+| `fix/SGD-XXX-descripcion` | Corrección no urgente | Igual que `feature/` |
 | `hotfix/descripcion` | Solo correcciones urgentes en producción | Se crea desde `{{RAMA_PRODUCCION}}`, se fusiona a `{{RAMA_PRODUCCION}}` con etiqueta y luego a `{{RAMA_DESARROLLO}}` |
 
 > Si el proyecto trabaja con una sola rama (proyecto personal o prototipo), `project-setup` deja `{{RAMA_DESARROLLO}}` = `{{RAMA_PRODUCCION}}` y elimina la parte de release.
@@ -21,7 +21,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ### Flujo típico para una tarea
 
 1. Estar en `{{RAMA_DESARROLLO}}` actualizada.
-2. Crear `feature/{{PREFIJO_TAREAS}}-XXX-descripcion`.
+2. Crear `feature/SGD-XXX-descripcion`.
 3. Trabajar con commits pequeños y convencionales.
 4. Verificar (ver "Antes de subir").
 5. Subir la rama y abrir un pull request hacia `{{RAMA_DESARROLLO}}`.
@@ -32,13 +32,13 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 Formato:
 
 ```
-<tipo>(<módulo>): <descripción> ({{PREFIJO_TAREAS}}-XXX)
+<tipo>(<módulo>): <descripción> (SGD-XXX)
 ```
 
 | Tipo | Cuándo se usa | Ejemplo |
 |---|---|---|
-| `feat` | Nueva funcionalidad | `feat(auth): login con JWT ({{PREFIJO_TAREAS}}-001)` |
-| `fix` | Corrección de un defecto | `fix(api): valida email duplicado ({{PREFIJO_TAREAS}}-004)` |
+| `feat` | Nueva funcionalidad | `feat(auth): login con JWT (SGD-001)` |
+| `fix` | Corrección de un defecto | `fix(api): valida email duplicado (SGD-004)` |
 | `docs` | Documentación | `docs(readme): instrucciones de despliegue` |
 | `test` | Pruebas | `test(usuarios): casos de valores límite` |
 | `refactor` | Cambio interno sin alterar comportamiento | `refactor(repo): extrae consulta a un método` |
@@ -48,7 +48,7 @@ Formato:
 
 ### Reglas
 
-- Cada commit de código referencia la tarea que atiende (`{{PREFIJO_TAREAS}}-XXX`). `docs`/`chore` sueltos pueden omitirla.
+- Cada commit de código referencia la tarea que atiende (`SGD-XXX`). `docs`/`chore` sueltos pueden omitirla.
 - La descripción explica **qué cambió** sin tener que abrir el código; en imperativo o presente, minúscula, sin punto final.
 - Idioma de los mensajes: {{IDIOMA_COMMITS}}.
 - Un commit = un cambio lógico. No mezclar refactor con feature.
@@ -89,24 +89,24 @@ npm install --save-dev @commitlint/cli @commitlint/config-conventional husky
 # 1. Actualizar y crear la rama
 git checkout {{RAMA_DESARROLLO}}
 git pull origin {{RAMA_DESARROLLO}}
-git checkout -b feature/{{PREFIJO_TAREAS}}-005-adjuntar-documento
+git checkout -b feature/SGD-005-adjuntar-documento
 
 # 2. Commits convencionales
 git add src/documentos/
-git commit -m "feat(documentos): permite adjuntar PDF ({{PREFIJO_TAREAS}}-005)"
+git commit -m "feat(documentos): permite adjuntar PDF (SGD-005)"
 
 # 3. Subir y abrir pull request
-git push -u origin feature/{{PREFIJO_TAREAS}}-005-adjuntar-documento
+git push -u origin feature/SGD-005-adjuntar-documento
 
 # 4. Tras la aprobación (si se fusiona en local)
 git checkout {{RAMA_DESARROLLO}}
 git pull origin {{RAMA_DESARROLLO}}
-git merge --no-ff feature/{{PREFIJO_TAREAS}}-005-adjuntar-documento
+git merge --no-ff feature/SGD-005-adjuntar-documento
 git push origin {{RAMA_DESARROLLO}}
 
 # 5. Borrar la rama
-git branch -d feature/{{PREFIJO_TAREAS}}-005-adjuntar-documento
-git push origin --delete feature/{{PREFIJO_TAREAS}}-005-adjuntar-documento
+git branch -d feature/SGD-005-adjuntar-documento
+git push origin --delete feature/SGD-005-adjuntar-documento
 ```
 
 ### Mantener la rama al día
@@ -144,7 +144,7 @@ git revert --no-edit <hash>
 git reset --soft HEAD~1
 
 # Corregir el mensaje del último commit local NO subido
-git commit --amend -m "fix(api): mensaje correcto ({{PREFIJO_TAREAS}}-004)"
+git commit --amend -m "fix(api): mensaje correcto (SGD-004)"
 ```
 
 ## Prohibido para el agente sin autorización explícita del usuario

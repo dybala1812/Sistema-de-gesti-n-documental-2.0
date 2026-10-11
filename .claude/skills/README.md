@@ -28,8 +28,8 @@ Kit genérico de skills para agentes IA (Claude Code, Codex, etc.). No trae dato
 ## Proyecto
 
 <!-- COMPLETAR: lo llena project-setup -->
-**{{PROYECTO}}** — {{DESCRIPCION_PRODUCTO}}
-Plataforma: {{PLATAFORMA}} · Stack: {{STACK}}
+**Sistema de Gestión Documental (SGD)** — módulo Archivo Central de la Universidad Autónoma: registra, custodia y consulta documentos, transferencias, comunicaciones por correo e historias académicas, reemplazando los Excel y PDF manuales. Spec: ia_contexto/spec/
+Plataforma: Web responsive (React) + PWA móvil para escaneo · Stack: React + TypeScript + Vite + Tailwind v4 + shadcn/ui (frontend NOVA_FT); Supabase PostgreSQL; n8n; backend por definir (ver ia_contexto/spec/decisiones.md P-11)
 
 ## Prioridades para agentes
 

@@ -1,8 +1,8 @@
-# Sistema de Diseño — {{PROYECTO}}
+# Sistema de Diseño — Sistema de Gestión Documental (SGD)
 
 ## Dirección visual
 
-Estilo: **{{ESTILO_VISUAL}}**.
+Estilo: **institucional sobrio: confiable, ordenado, legible, cálido (fondos beige, autoridad navy)**.
 
 <!-- COMPLETAR: 3–5 adjetivos de cómo debe sentirse la app y referencias visuales. Si no hay marca definida, proponer una con la skill frontend-design y registrar la decisión en memory/. -->
 
@@ -26,8 +26,8 @@ Estilo: **{{ESTILO_VISUAL}}**.
 
 ## Tipografía
 
-- Títulos: {{FUENTE_TITULOS}}.
-- Texto: {{FUENTE_TEXTO}}.
+- Títulos: por definir (fonts.css vacío).
+- Texto: por definir (fonts.css vacío).
 - Jerarquía clara: no usar bloques largos sin subtítulos ni listas.
 
 ## Interacciones

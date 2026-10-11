@@ -1,4 +1,4 @@
-# Skills cargadas y su estado en {{PROYECTO}}
+# Skills cargadas y su estado en Sistema de Gestión Documental (SGD)
 
 `project-setup` define el estado de cada skill según el stack detectado.
 

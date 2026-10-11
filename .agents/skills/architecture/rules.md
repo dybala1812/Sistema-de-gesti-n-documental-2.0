@@ -1,8 +1,8 @@
-# Reglas de Arquitectura — {{PROYECTO}}
+# Reglas de Arquitectura — Sistema de Gestión Documental (SGD)
 
 ## Principios
 
-- Mantener la arquitectura actual ({{STACK}}) mientras no haya una necesidad real de cambiarla; los cambios grandes se registran en `memory/`.
+- Mantener la arquitectura actual (React + TypeScript + Vite + Tailwind v4 + shadcn/ui (frontend NOVA_FT); Supabase PostgreSQL; n8n; backend por definir (ver ia_contexto/spec/decisiones.md P-11)) mientras no haya una necesidad real de cambiarla; los cambios grandes se registran en `memory/`.
 - Una responsabilidad por módulo/componente. Si un archivo mezcla UI, lógica de negocio y acceso a datos, extraer progresivamente.
 - Si una regla, patrón o instrucción se vuelve repetitiva, documentarla en `.agents/skills/`.
 
@@ -22,7 +22,7 @@
 ## UI
 
 - Seguir `frontend/` y la skill `ux-heuristicas`.
-- Usar los tokens de `{{RUTA_ESTILOS_GLOBALES}}` antes de crear colores, sombras o radios nuevos.
+- Usar los tokens de `NOVA_FT/src/styles/theme.css` antes de crear colores, sombras o radios nuevos.
 - Accesibilidad: contraste, labels, foco visible, texto alternativo y navegación por teclado/lector de pantalla.
 
 ## Calidad

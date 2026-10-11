@@ -1,4 +1,4 @@
-# Prompts reutilizables — {{PROYECTO}}
+# Prompts reutilizables — Sistema de Gestión Documental (SGD)
 
 Aquí van los prompts que el producto o los agentes usan más de una vez (asistentes IA dentro de la app, revisión de contenido, generación de datos de prueba…).
 
