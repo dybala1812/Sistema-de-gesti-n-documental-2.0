@@ -1,0 +1,443 @@
+{
+  "name": "F4 · Recordatorios",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "3af37e0e-4aea-4967-a732-942c1a84a7e3",
+      "name": "Lunes a viernes 8:00 a. m.",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        170
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/recordatorios/dia-habil",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 60000
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "b49c7583-9434-416b-8011-ec71999652e9",
+      "name": "¿Hoy es día hábil?",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        170
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6d869918-7582-4c3c-8c4d-f0688a8d8b55",
+              "leftValue": "={{ $json.habil }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "875160a1-5525-4fab-a88b-8d64b6ffe868",
+      "name": "Es día hábil",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        520,
+        170
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/recordatorios/pendientes",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 60000
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "5989654e-6d76-4f7a-82fb-e0af850c5fe6",
+      "name": "Pendientes por dependencia",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        780,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Un correo por dependencia con todas sus pendientes.\nconst r = $input.item.json;\nconst p = r.pendientes || [];\nconst lista = p.map(x => `- ${x.consecutivo} · ${x.asunto} · límite ${String(x.fecha_limite).slice(0, 10)} · vencida hace ${x.dias_vencida} día(s)`).join('\\n');\nreturn { json: {\n  plantilla: 'recordatorio',\n  destinatario_correo: r.correo_oficial,\n  consecutivos: p.map(x => x.consecutivo),\n  variables: { nombre: r.nombre, dependencia: r.nombre, asunto: lista, pendientes: lista, consecutivo: p.map(x => x.consecutivo).join(', ') },\n  archivo_ids: [],\n  contexto: { dependencia_id: r.dependencia_id, comunicacion_ids: p.map(x => x.id) }\n} };\n",
+        "mode": "runOnceForEachItem"
+      },
+      "id": "60f9a145-6102-41ff-8756-29313d78aff7",
+      "name": "Preparar recordatorio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_ID_F5",
+          "mode": "id"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "d23e5581-1e5f-4d97-b1f4-47ce17203a3e",
+      "name": "Enviar recordatorio (F5)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1300,
+        0
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "06b7ac2d-bbea-4189-b45a-5ee967c7b659",
+              "leftValue": "={{ $json.ok === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "283661b5-a5e5-448c-bb35-0bcaaf86f9cb",
+      "name": "¿Se envió?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/recordatorios/registrar",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ids: $json.contexto.comunicacion_ids, message_id: $json.message_id }) }}",
+        "options": {
+          "timeout": 60000
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "b7e1f22e-3fa0-4c0e-b68c-e2d9677c8ba8",
+      "name": "Registrar recordatorios",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1820,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/errores/envio",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ usuario: null, comunicaciones: $('Preparar recordatorio').item.json.contexto.comunicacion_ids, dependencia: null, detalle: { flujo: 'F4', error: JSON.stringify($json.error ?? 'error desconocido').slice(0, 500) } }) }}",
+        "options": {
+          "timeout": 60000
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "4735e7fd-185e-41cc-9042-a44b621ec8c6",
+      "name": "Registrar error de recordatorio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1820,
+        170
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/recordatorios/resumen-dia",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 60000
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "0c84bf40-cd75-4b3c-979b-ec84d7d9a791",
+      "name": "Resumen del día",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        780,
+        510
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst filas = $input.all().map(i => i.json);\nconst buzon = filas[0].buzon;\nconst por = (f) => filas.filter(f);\nconst nuevas = por(x => x.estado === 'nueva');\nconst vencidas = por(x => x.vencida);\nconst escalar = por(x => x.por_escalar);\nconst porDep = {};\nvencidas.forEach(x => { (porDep[x.dependencia || '(sin dependencia)'] ||= []).push(x.consecutivo); });\nconst bloque = (t, a) => a.length ? `${t}\\n${a.join('\\n')}` : `${t}\\n  (ninguna)`;\nconst detalle = [\n  bloque('NUEVAS SIN ATENDER:', nuevas.map(x => `- ${x.consecutivo} (${x.dias_desde_recepcion} día(s) desde la recepción)`)),\n  bloque('VENCIDAS POR DEPENDENCIA:', Object.entries(porDep).map(([d, c]) => `- ${d}: ${c.join(', ')}`)),\n  bloque('PARA ESCALAR (3.er recordatorio):', escalar.map(x => `- ${x.consecutivo} · ${x.dependencia || ''}`))\n].join('\\n\\n');\nreturn [{ json: {\n  plantilla: 'resumen',\n  destinatario_correo: buzon,\n  consecutivos: [],\n  variables: { nombre: 'Archivo Central',\n               asunto: `${filas.length} activas · ${nuevas.length} nuevas · ${vencidas.length} vencidas · ${escalar.length} por escalar`,\n               respuesta: detalle, pendientes: detalle, consecutivo: '' },\n  archivo_ids: [],\n  contexto: { resumen: true }\n} }];\n"
+      },
+      "id": "9f45ae42-5386-42e6-b403-3d317fce5024",
+      "name": "Preparar resumen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        510
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_ID_F5",
+          "mode": "id"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "0f0fed5b-92e7-4298-a893-e159648b8345",
+      "name": "Enviar resumen (F5)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1300,
+        510
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "content": "## F4 · Recordatorios\nL–V 8:00 (America/Bogotá). Sale si `fn_es_dia_habil` es falso.\n\n- Un correo por dependencia con todas sus pendientes (`fn_comunicaciones_a_recordar`: ya respeta cada 2 días hábiles y el máximo de recordatorios).\n- Solo se registra el recordatorio (`fn_registrar_recordatorio`) si el correo salió; al 3.er recordatorio la base marca `por_escalar`.\n- El resumen a Archivo Central va en la rama de abajo.",
+        "width": 640,
+        "height": 220,
+        "color": 4
+      },
+      "id": "e5386d62-5070-41cc-902e-9a7768b14a06",
+      "name": "Nota 12",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -170
+      ]
+    }
+  ],
+  "connections": {
+    "Lunes a viernes 8:00 a. m.": {
+      "main": [
+        [
+          {
+            "node": "¿Hoy es día hábil?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hoy es día hábil?": {
+      "main": [
+        [
+          {
+            "node": "Es día hábil",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Es día hábil": {
+      "main": [
+        [
+          {
+            "node": "Pendientes por dependencia",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Resumen del día",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pendientes por dependencia": {
+      "main": [
+        [
+          {
+            "node": "Preparar recordatorio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar recordatorio": {
+      "main": [
+        [
+          {
+            "node": "Enviar recordatorio (F5)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar recordatorio (F5)": {
+      "main": [
+        [
+          {
+            "node": "¿Se envió?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Se envió?": {
+      "main": [
+        [
+          {
+            "node": "Registrar recordatorios",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar error de recordatorio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resumen del día": {
+      "main": [
+        [
+          {
+            "node": "Preparar resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar resumen": {
+      "main": [
+        [
+          {
+            "node": "Enviar resumen (F5)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Bogota"
+  },
+  "pinData": {},
+  "tags": []
+}

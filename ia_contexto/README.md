@@ -1,4 +1,4 @@
-# ia_contexto — {{PROYECTO}}
+# ia_contexto — Sistema de Gestión Documental (SGD)
 
 Estado del proyecto para agentes IA y para el equipo: **qué** falta, qué se decidió y qué se entregó.
 El **cómo** (stack, convenciones, pruebas) vive en `.agents/skills/`. Lo gestiona la skill `project-manager`.

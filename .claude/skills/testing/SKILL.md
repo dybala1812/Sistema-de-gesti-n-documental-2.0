@@ -1,14 +1,14 @@
 ---
 name: testing
-description: Estrategia, comandos y criterio de "verificado" de {{PROYECTO}}. Úsala para comprobar que una tarea está lista antes de cerrarla.
+description: Estrategia, comandos y criterio de "verificado" de Sistema de Gestión Documental (SGD). Úsala para comprobar que una tarea está lista antes de cerrarla.
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
-# Testing — {{PROYECTO}}
+# Testing — Sistema de Gestión Documental (SGD)
 
 ## Estado actual
 
-<!-- COMPLETAR: framework de tests configurado (Vitest, Jest, Flutter test, Playwright, Detox…) o "no configurado" + tarea {{PREFIJO_TAREAS}}-XXX para integrarlo. -->
+Frontend `NOVA_FT/`: sin framework de tests ni linter configurado; solo `npm run typecheck` y `npm run build`. Backend: aún no existe (P-11). Configurarlo es parte de SGD-004/SGD-008.
 
 ## Verificación mínima obligatoria
 
@@ -39,4 +39,24 @@ Resultado esperado: los tres sin errores. Sin ejecución real no hay verificaci�
 
 ## Cobertura esperada
 
-<!-- COMPLETAR: meta inicial (ej. reglas de negocio críticas al 100 %, global ≥ 60 %). -->
+Meta del F-02 (RNF-AC-09): **≥ 60 %** en consecutivos, estados y permisos. Recomendado: reglas RN-AC-* críticas al 100 %.
+
+## Pruebas obligatorias del módulo Archivo Central
+
+Casos de la matriz de trazabilidad (`ia_contexto/spec/trazabilidad.md`); una tarea no se cierra sin su caso en verde. Los más críticos:
+
+| Área | Caso | Regla |
+|---|---|---|
+| Consecutivos | N inserciones concurrentes → números únicos y secuenciales por tipo; reinicio al cambiar de año. | RN-AC-08 |
+| Estados | Solo transiciones válidas de `business-rules.md`; enviar respuesta fallido no cierra. | RN-AC-09 |
+| Permisos | Dependencia no ve otra dependencia; RA no ve retirados/graduados; intento denegado queda auditado. | RF-AC-023 |
+| Duplicados | Mismo archivo en el mismo expediente → rechazado. | RN-AC-11 |
+| Correo | Mismo Message-ID leído dos veces → una sola comunicación; respuesta sin etiqueta → se asocia por In-Reply-To. | RNF-AC-04 |
+| Idempotencia | Importar el mismo Excel histórico dos veces → sin duplicados. | RF-AC-019 |
+| Transferencias | En 2026, transferencia del año 2025 → bloqueada. | RN-AC-03 |
+| Anulación | Anular → el registro sigue en la BD. | RN-AC-12 |
+| IA | Sugerencia nunca cambia la clasificación sin confirmación. | RN-AC-13 |
+
+RNF a medir (SGD-070): búsqueda < 3 s con 50.000 docs; correo visible ≤ 5 min; restauración de respaldo probada; carga + clasificación < 3 min con usuario real.
+
+Datos de prueba: **siempre ficticios** (Ley 1581).

@@ -1,0 +1,332 @@
+{
+  "name": "F1 · Correo entrante (v2 con IA)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "minutes", "minutesInterval": 3 }] }
+      },
+      "id": "trigger-v2",
+      "name": "Cada 3 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 25,
+        "simple": true,
+        "filters": { "readStatus": "unread", "labelIds": ["INBOX"] },
+        "options": {}
+      },
+      "id": "leer-v2",
+      "name": "Leer no leídos",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [260, 300],
+      "credentials": { "gmailOAuth2": { "id": "REEMPLAZAR", "name": "Buzón Archivo Central (Gmail)" } },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": { "batchSize": 1, "options": {} },
+      "id": "split-v2",
+      "name": "Un correo a la vez",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "get",
+        "messageId": "={{ $json.id }}",
+        "simple": false,
+        "options": { "downloadAttachments": true, "dataPropertyAttachmentsPrefixName": "attachment_" }
+      },
+      "id": "obtener-v2",
+      "name": "Obtener correo completo",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [780, 300],
+      "credentials": { "gmailOAuth2": { "id": "REEMPLAZAR", "name": "Buzón Archivo Central (Gmail)" } },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst it = $input.first();\nconst m = it.json;\nconst h = {};\nif (m.headers && typeof m.headers === 'object' && !Array.isArray(m.headers)) {\n  for (const [k, v] of Object.entries(m.headers)) h[k.toLowerCase()] = typeof v === 'string' ? v : (v && v.text) || JSON.stringify(v);\n}\nif (Array.isArray(m.payload?.headers)) for (const x of m.payload.headers) h[String(x.name).toLowerCase()] = x.value;\nconst gmail_id = m.id || $('Un correo a la vez').first().json.id;\nconst fromV = m.from?.value?.[0] || {};\nconst fromTxt = String(m.from?.text || (typeof m.from === 'string' ? m.from : '') || '');\nconst de_correo = String(fromV.address || (fromTxt.match(/<([^>]+)>/) || [])[1] || fromTxt).trim().toLowerCase();\nconst de_nombre = (fromV.name || '').trim() || null;\nconst asunto = String(m.subject || '(sin asunto)').replace(/\\s+/g, ' ').trim();\nlet cuerpo = String(m.text || '').trim();\nif (!cuerpo && m.html) {\n  cuerpo = String(m.html)\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, '').replace(/<script[\\s\\S]*?<\\/script>/gi, '')\n    .replace(/<br\\s*\\/?>/gi, '\\n').replace(/<\\/(p|div|tr|li)>/gi, '\\n').replace(/<[^>]+>/g, '')\n    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"')\n    .replace(/\\n{3,}/g, '\\n\\n').trim();\n}\nconst message_id = String(m.messageId || h['message-id'] || `<gmail-${gmail_id}@sin-message-id>`).trim();\nconst in_reply_to = String(m.inReplyTo || h['in-reply-to'] || '').trim() || null;\nconst refsRaw = m.references || h['references'] || '';\nconst references = (Array.isArray(refsRaw) ? refsRaw : String(refsRaw).split(/\\s+/)).filter(Boolean);\nconst fecha = new Date(m.date || Date.now());\nconst recibido_en = (isNaN(fecha) ? new Date() : fecha).toISOString();\nconst ids_citados = [...new Set([in_reply_to, ...references].filter(Boolean))];\nconst tiene_etiqueta = /\\[SGD\\s/i.test(asunto);\nconst attachmentKeys = Object.keys(it.binary || {}).filter(k => k.startsWith('attachment_'));\nreturn [{ json: { gmail_id, message_id, in_reply_to, references, ids_citados, de_nombre, de_correo, asunto, cuerpo: cuerpo.slice(0, 15000), recibido_en, tiene_etiqueta, tiene_adjuntos: attachmentKeys.length > 0, adjuntos_binarios: attachmentKeys } }];\n"
+      },
+      "id": "normalizar-v2",
+      "name": "Normalizar correo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/correos/estado",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message_id: $json.message_id, asunto: $json.asunto, in_reply_to: $json.in_reply_to ?? null, de_correo: $json.de_correo }) }}",
+        "options": { "timeout": 60000 },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "estado-v2",
+      "name": "Consultar estado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1300, 100],
+      "credentials": { "httpHeaderAuth": { "id": "REEMPLAZAR", "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)" } },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/dependencias/buscar",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ correo: $json.de_correo }) }}",
+        "options": { "timeout": 60000 },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "buscar-dep-v2",
+      "name": "Buscar dependencia",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1300, 300],
+      "credentials": { "httpHeaderAuth": { "id": "REEMPLAZAR", "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)" } },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/comunicaciones/buscar",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ remitente_correo: $json.de_correo, limite: 3 }) }}",
+        "options": { "timeout": 60000 },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "buscar-com-v2",
+      "name": "Buscar comunicaciones",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1300, 500],
+      "credentials": { "httpHeaderAuth": { "id": "REEMPLAZAR", "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)" } },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst n = $('Normalizar correo').first().json;\nconst q = $('Consultar estado').first().json;\nconst dep = $('Buscar dependencia').first().json;\nconst coms = $('Buscar comunicaciones').first().json || [];\nconst ctx = {\n  de: `${n.de_nombre || ''} <${n.de_correo}>`,\n  asunto: n.asunto,\n  cuerpo: n.cuerpo,\n  message_id: n.message_id,\n  in_reply_to: n.in_reply_to,\n  references: n.references.join(', ') || 'ninguno',\n  tiene_etiqueta_sgd: n.tiene_etiqueta ? 'SÍ' : 'NO',\n  existe_message_id: q.ya_procesado ? 'SÍ (ya fue procesado)' : 'NO',\n  comunicacion_previa_id: q.comunicacion_id || 'ninguna',\n  dependencia_previa_id: q.dependencia_id || 'ninguna',\n  remitente_es_dependencia: dep.id ? `SÍ - ${dep.nombre}` : 'NO',\n  comunicaciones_recientes: coms.length ? coms.map(c => `- ${c.consecutivo}: ${c.asunto} (${c.estado})`).join('\\n') : 'ninguna'\n};\nreturn [{ json: ctx }];\n"
+      },
+      "id": "contexto-v2",
+      "name": "Preparar contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'gpt-4o-mini', temperature: 0.2, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: 'Eres un clasificador experto de correos para el Archivo Central de una universidad. Respondes ÚNICAMENTE con un objeto JSON válido.' }, { role: 'user', content: `Clasifica este correo para el Sistema de Gestión Documental.\\n\\nREGLAS:\\n1. \"respuesta_dependencia\": cuando una dependencia de la universidad responde sobre una comunicación previa del SGD. Indicios: el asunto empieza con Re:/RV:/FW:, tiene In-Reply-To, tiene etiqueta [SGD ...], o el remitente es dependencia y el cuerpo menciona un consecutivo o asunto previo.\\n2. \"correo_nuevo\": cuando un estudiante o externo envía una solicitud nueva (información, documentos, prácticas, etc.). Indicios: asunto sin Re:/RV:, remitente NO es dependencia, no hay In-Reply-To.\\n3. \"sin_asociar\": cuando parece respuesta pero NO se puede vincular a una comunicación previa (falta In-Reply-To, no coincide message_id, no hay etiqueta SGD, el remitente no es dependencia conocida).\\n4. \"spam\": publicidad, newsletters, notificaciones automáticas, correos masivos no solicitados.\\n5. \"rebote\": notificación de error de entrega (delivery failure, bounce, no such user).\\n\\nDATOS DEL CORREO:\\n${JSON.stringify($json, null, 2)}\\n\\nResponde ÚNICAMENTE con este JSON:\\n{\\\"tipo\\\": \\\"respuesta_dependencia|correo_nuevo|sin_asociar|spam|rebote\\\", \\\"comunicacion_id\\\": null o número, \\\"dependencia_id\\\": null o número, \\\"motivo\\\": \\\"una frase corta explicando por qué\\\"}` }] }) }}",
+        "options": { "timeout": 120000 }
+      },
+      "id": "llm-v2",
+      "name": "Clasificar con IA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1820, 300],
+      "credentials": { "httpHeaderAuth": { "id": "REEMPLAZAR", "name": "OpenAI API Key" } },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst n = $('Normalizar correo').first().json;\nconst q = $('Consultar estado').first().json;\nconst dep = $('Buscar dependencia').first().json;\nconst llm = $input.first().json;\nlet tipo = 'correo_nuevo';\nlet comunicacion_id = q.comunicacion_id || null;\nlet dependencia_id = q.dependencia_id || dep.id || null;\nlet motivo = 'Clasificación por IA';\ntry {\n  const content = llm.choices?.[0]?.message?.content || '{}';\n  const parsed = JSON.parse(content);\n  tipo = parsed.tipo || tipo;\n  comunicacion_id = parsed.comunicacion_id ?? comunicacion_id;\n  dependencia_id = parsed.dependencia_id ?? dependencia_id;\n  motivo = parsed.motivo || motivo;\n} catch (e) {\n  // Si el LLM no devuelve JSON válido, usamos la clasificación por reglas como fallback\n  if (q.ya_procesado || q.es_propio) tipo = 'spam';\n  else if (q.comunicacion_id && q.dependencia_id) tipo = 'respuesta_dependencia';\n  else if (q.comunicacion_id) tipo = 'sin_asociar';\n  else if (/delivery failure|undeliverable|bounce|no such user/i.test(n.asunto + ' ' + n.cuerpo)) tipo = 'rebote';\n  else if (/unsubscribe|newsletter|promoción|oferta|publicidad/i.test(n.asunto + ' ' + n.cuerpo)) tipo = 'spam';\n  motivo = 'Fallback por error en respuesta de IA';\n}\nreturn [{ json: { ...n, tipo, comunicacion_id, dependencia_id, motivo } }];\n"
+      },
+      "id": "parsear-v2",
+      "name": "Parsear clasificación",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2080, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            { "value": "respuesta_dependencia", "output": 0 },
+            { "value": "correo_nuevo", "output": 1 },
+            { "value": "sin_asociar", "output": 2 },
+            { "value": "rebote", "output": 3 },
+            { "value": "spam", "output": 4 }
+          ]
+        }
+      },
+      "id": "switch-v2",
+      "name": "Ruta según tipo",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [2340, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/correos/respuesta-dependencia",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ comunicacion_id: $json.comunicacion_id, de_correo: $json.de_correo, asunto: $json.asunto, cuerpo: $json.cuerpo, message_id: $json.message_id, recibido_en: $json.recibido_en, archivo_ids: [], adjuntos_omitidos: [] }) }}",
+        "options": { "timeout": 60000 },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "respuesta-dep-v2",
+      "name": "Registrar respuesta dependencia",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2600, 0],
+      "credentials": { "httpHeaderAuth": { "id": "REEMPLAZAR", "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)" } },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/correos/nuevo",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message_id: $json.message_id, de_nombre: $json.de_nombre, de_correo: $json.de_correo, asunto: $json.asunto, cuerpo: $json.cuerpo, recibido_en: $json.recibido_en, in_reply_to: $json.in_reply_to, archivo_ids: [], adjuntos_omitidos: [] }) }}",
+        "options": { "timeout": 60000 },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "nuevo-v2",
+      "name": "Registrar correo nuevo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2600, 150],
+      "credentials": { "httpHeaderAuth": { "id": "REEMPLAZAR", "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)" } },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/correos/sin-asociar",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message_id: $json.message_id, in_reply_to: $json.in_reply_to, de_nombre: $json.de_nombre, de_correo: $json.de_correo, asunto: $json.asunto, cuerpo: $json.cuerpo, recibido_en: $json.recibido_en, motivo: $json.motivo, posible_comunicacion_id: $json.comunicacion_id, adjuntos: [] }) }}",
+        "options": { "timeout": 60000 },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "sin-asociar-v2",
+      "name": "Guardar sin asociar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2600, 300],
+      "credentials": { "httpHeaderAuth": { "id": "REEMPLAZAR", "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)" } },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/correos/rebote",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ids: $json.ids_citados, de: $json.de_correo, asunto: $json.asunto }) }}",
+        "options": { "timeout": 60000 },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "rebote-v2",
+      "name": "Registrar rebote",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2600, 450],
+      "credentials": { "httpHeaderAuth": { "id": "REEMPLAZAR", "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)" } },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { ok: true, accion: 'marcar_leido' } }];"
+      },
+      "id": "spam-v2",
+      "name": "Marcar spam",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2600, 600]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "markAsRead",
+        "messageId": "={{ $('Normalizar correo').first().json.gmail_id }}"
+      },
+      "id": "marcar-leido-v2",
+      "name": "Marcar como leído",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2860, 300],
+      "credentials": { "gmailOAuth2": { "id": "REEMPLAZAR", "name": "Buzón Archivo Central (Gmail)" } },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "width": 700,
+        "height": 200,
+        "content": "## F1 v2 · Correo entrante con IA\n1. Lee no leídos de Gmail.\n2. Normaliza el correo.\n3. Consulta contexto al backend: estado del message_id, si el remitente es dependencia, comunicaciones recientes.\n4. Envía todo a OpenAI para clasificar.\n5. Si la IA falla, usa reglas de fallback.\n6. Según el tipo, registra respuesta, nuevo, sin-asociar, rebote o spam.\n7. Marca el correo como leído.\n\nCredenciales: Gmail, Backend SGD, OpenAI. Reemplazar BACKEND_URL_AQUI."
+      },
+      "id": "notas-v2",
+      "name": "Notas",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [0, 80]
+    }
+  ],
+  "connections": {
+    "Cada 3 minutos": { "main": [[{ "node": "Leer no leídos", "type": "main", "index": 0 }]] },
+    "Leer no leídos": { "main": [[{ "node": "Un correo a la vez", "type": "main", "index": 0 }]] },
+    "Un correo a la vez": { "main": [[{ "node": "Obtener correo completo", "type": "main", "index": 0 }]] },
+    "Obtener correo completo": { "main": [[{ "node": "Normalizar correo", "type": "main", "index": 0 }]] },
+    "Normalizar correo": {
+      "main": [
+        [{ "node": "Consultar estado", "type": "main", "index": 0 }],
+        [{ "node": "Buscar dependencia", "type": "main", "index": 0 }],
+        [{ "node": "Buscar comunicaciones", "type": "main", "index": 0 }]
+      ]
+    },
+    "Consultar estado": { "main": [[{ "node": "Preparar contexto", "type": "main", "index": 0 }]] },
+    "Buscar dependencia": { "main": [[{ "node": "Preparar contexto", "type": "main", "index": 0 }]] },
+    "Buscar comunicaciones": { "main": [[{ "node": "Preparar contexto", "type": "main", "index": 0 }]] },
+    "Preparar contexto": { "main": [[{ "node": "Clasificar con IA", "type": "main", "index": 0 }]] },
+    "Clasificar con IA": { "main": [[{ "node": "Parsear clasificación", "type": "main", "index": 0 }]] },
+    "Parsear clasificación": { "main": [[{ "node": "Ruta según tipo", "type": "main", "index": 0 }]] },
+    "Ruta según tipo": {
+      "main": [
+        [{ "node": "Registrar respuesta dependencia", "type": "main", "index": 0 }],
+        [{ "node": "Registrar correo nuevo", "type": "main", "index": 0 }],
+        [{ "node": "Guardar sin asociar", "type": "main", "index": 0 }],
+        [{ "node": "Registrar rebote", "type": "main", "index": 0 }],
+        [{ "node": "Marcar spam", "type": "main", "index": 0 }]
+      ]
+    },
+    "Registrar respuesta dependencia": { "main": [[{ "node": "Marcar como leído", "type": "main", "index": 0 }]] },
+    "Registrar correo nuevo": { "main": [[{ "node": "Marcar como leído", "type": "main", "index": 0 }]] },
+    "Guardar sin asociar": { "main": [[{ "node": "Marcar como leído", "type": "main", "index": 0 }]] },
+    "Registrar rebote": { "main": [[{ "node": "Marcar como leído", "type": "main", "index": 0 }]] },
+    "Marcar spam": { "main": [[{ "node": "Marcar como leído", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}

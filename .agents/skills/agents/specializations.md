@@ -1,13 +1,13 @@
-# Especialización de Agentes — {{PROYECTO}}
+# Especialización de Agentes — Sistema de Gestión Documental (SGD)
 
 Plantilla. `project-setup` ajusta las rutas reales y elimina los roles que no apliquen.
 
 ## Frontend UI Agent
 Componentes, responsive, accesibilidad y consistencia visual.
-- Revisa: <!-- COMPLETAR: carpetas de páginas/pantallas y componentes -->, `{{RUTA_ESTILOS_GLOBALES}}`, `.agents/skills/frontend/`
+- Revisa: <!-- COMPLETAR: carpetas de páginas/pantallas y componentes -->, `NOVA_FT/src/styles/theme.css`, `.agents/skills/frontend/`
 - Skills: `frontend-design`, `ux-heuristicas`, `animation-creator`
 
-## Mobile Agent (si {{PLATAFORMA}} incluye móvil)
+## Mobile Agent (si Web responsive (React) + PWA móvil para escaneo incluye móvil)
 Navegación nativa, gestos, permisos, rendimiento en dispositivo, builds.
 - Revisa: <!-- COMPLETAR: android/, ios/, app.json, navegación -->
 - Skills: `ux-heuristicas` (ítems 📱), `testing`

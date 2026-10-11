@@ -1,4 +1,4 @@
-- [ ] {{PREFIJO_TAREAS}}-XXX: <qué se reorganiza>
+- [ ] SGD-XXX: <qué se reorganiza>
   Tipo: refactor
   Prioridad: baja
   Motivo: …

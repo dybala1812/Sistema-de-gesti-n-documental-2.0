@@ -1,0 +1,409 @@
+{
+  "name": "F5 · Envío de correo (subflujo)",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "e0fa7bf2-ffa3-4303-ace2-65eb674e46cf",
+      "name": "Llamado desde otro flujo",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        170
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "plantilla_correo",
+        "returnAll": false,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "codigo",
+              "condition": "eq",
+              "keyValue": "={{ $json.plantilla || '' }}"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "id": "d2d76a2f-6228-4201-bfb1-d714bcbd37bd",
+      "name": "Leer plantilla",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        260,
+        170
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REEMPLAZAR",
+          "name": "Supabase SGD (service_role)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Entrada esperada (la arma quien llama):\n// { plantilla, destinatario_correo, consecutivo | consecutivos[], variables{}, archivo_ids[], contexto{} }\nconst entrada = $('Llamado desde otro flujo').first().json;\nconst plantilla = $input.first().json;\nif (!plantilla || !plantilla.codigo) {\n  throw new Error(`F5: no existe la plantilla \"${entrada.plantilla}\" en plantilla_correo`);\n}\nconst correoValido = /^[^\\s@<>,;]+@[^\\s@<>,;]+\\.[^\\s@<>,;]+$/;\nconst para = String(entrada.destinatario_correo || '').trim();\nif (!correoValido.test(para)) throw new Error(`F5: destinatario inválido: \"${para}\"`);\n\nconst consecutivos = [].concat(entrada.consecutivos || entrada.consecutivo || []).filter(Boolean);\nif (!consecutivos.length && entrada.plantilla !== 'resumen') {\n  throw new Error('F5: falta el consecutivo; todo correo del sistema lleva [SGD <consecutivo>] en el asunto');\n}\nconst hoy = new Date().toLocaleDateString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: '2-digit', year: 'numeric' });\nconst vars = Object.assign({ fecha: hoy, consecutivo: consecutivos.join(', ') }, entrada.variables || {});\nconst render = (t) => String(t ?? '').replace(/\\{(\\w+)\\}/g, (_, k) => (vars[k] === undefined || vars[k] === null) ? '' : String(vars[k]));\n\nlet asunto = render(plantilla.asunto).replace(/\\s+/g, ' ').trim();\nconst faltan = consecutivos.filter(c => !asunto.includes(`[SGD ${c}]`));\nif (faltan.length) asunto = faltan.map(c => `[SGD ${c}]`).join(' ') + ' ' + asunto;\n\nreturn [{ json: {\n  to: para,\n  asunto,\n  cuerpo: render(plantilla.cuerpo),\n  archivo_ids: entrada.archivo_ids || [],\n  contexto: entrada.contexto ?? null\n} }];\n"
+      },
+      "id": "86b18456-4311-44ea-8b5f-9b4222e1f2b9",
+      "name": "Armar mensaje y etiqueta [SGD]",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        170
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9a420371-54f6-4f66-a5e0-be2b1c2b00ed",
+              "leftValue": "={{ $json.archivo_ids.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b042e7cc-f3e9-4a12-adb3-af663c1d5c6f",
+      "name": "¿Lleva adjuntos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        780,
+        170
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst m = $input.first().json;\nreturn m.archivo_ids.map((id, i) => ({ json: { archivo_id: id, orden: i } }));\n"
+      },
+      "id": "677218be-906d-41d5-8f22-84e063c61701",
+      "name": "Separar ids de archivo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://BACKEND_URL_AQUI/api/archivos/{{ $json.archivo_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "id": "83ae2050-7a80-4f09-88bc-2660af2edc16",
+      "name": "Descargar adjunto del backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1300,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst base = $('Armar mensaje y etiqueta [SGD]').first().json;\nconst binary = {};\n$input.all().forEach((it, i) => { binary['adjunto_' + i] = it.binary.data; });\nreturn [{ json: { ...base, binarios: Object.keys(binary).join(',') }, binary }];\n"
+      },
+      "id": "c64dd86d-1481-4362-ad60-3963936508a2",
+      "name": "Reunir adjuntos en un solo correo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.asunto }}",
+        "emailType": "text",
+        "message": "={{ $json.cuerpo }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "Archivo Central",
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "={{ $json.binarios }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "03e9dba5-82a0-41c8-8859-32ffa03f855c",
+      "name": "Enviar con adjuntos",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1820,
+        0
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REEMPLAZAR",
+          "name": "Buzón Archivo Central (Gmail)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.asunto }}",
+        "emailType": "text",
+        "message": "={{ $json.cuerpo }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "Archivo Central"
+        }
+      },
+      "id": "411f01be-64b6-4376-b298-ac2de9139198",
+      "name": "Enviar sin adjuntos",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1820,
+        340
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REEMPLAZAR",
+          "name": "Buzón Archivo Central (Gmail)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "get",
+        "messageId": "={{ $json.id }}",
+        "simple": false,
+        "options": {}
+      },
+      "id": "a828188a-1311-4fca-b502-959b5d84d175",
+      "name": "Leer el correo enviado (Message-ID)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2080,
+        170
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REEMPLAZAR",
+          "name": "Buzón Archivo Central (Gmail)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Devuelve a quien llamó el Message-ID real del correo enviado, para guardarlo en comunicacion_evento.message_id\nconst ctx = $('Armar mensaje y etiqueta [SGD]').first().json;\nconst m = $input.first().json;\nconst hdr = m.headers && (m.headers['message-id'] || m.headers['Message-ID']);\nlet message_id = m.messageId || hdr || null;\nlet advertencia = null;\nif (!message_id) {\n  // El correo YA salió; no se debe fallar aquí (se reenviaría). Se deja un id sintético y se avisa.\n  message_id = `<sgd-gmail-${m.id}@sin-message-id>`;\n  advertencia = 'No se pudo leer el Message-ID real; las respuestas se asociarán solo por la etiqueta [SGD].';\n}\nreturn [{ json: { ok: true, message_id, enviado_en: new Date().toISOString(), gmail_id: m.id || null,\n                  destinatario: ctx.to, advertencia, contexto: ctx.contexto } }];\n"
+      },
+      "id": "de1e1cfc-7777-4e03-b271-f8d60abf56cd",
+      "name": "Resultado del envío",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2340,
+        170
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## F5 · Envío de correo\nÚnico lugar donde el sistema envía correo.\n\n**Entrada** (la arma quien llama): `plantilla`, `destinatario_correo`, `consecutivo` o `consecutivos[]`, `variables{}`, `archivo_ids[]`, `contexto{}`.\n\n**Salida**: `{ ok, message_id, enviado_en, contexto }`.\n\nAdjuntos: se descargan de `GET /api/archivos/{id}`. n8n no guarda archivos.",
+        "width": 520,
+        "height": 220,
+        "color": 4
+      },
+      "id": "e1af2d21-4507-4465-ab8f-ec4296918a23",
+      "name": "Nota 11",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -170
+      ]
+    }
+  ],
+  "connections": {
+    "Llamado desde otro flujo": {
+      "main": [
+        [
+          {
+            "node": "Leer plantilla",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer plantilla": {
+      "main": [
+        [
+          {
+            "node": "Armar mensaje y etiqueta [SGD]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar mensaje y etiqueta [SGD]": {
+      "main": [
+        [
+          {
+            "node": "¿Lleva adjuntos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Lleva adjuntos?": {
+      "main": [
+        [
+          {
+            "node": "Separar ids de archivo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enviar sin adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar ids de archivo": {
+      "main": [
+        [
+          {
+            "node": "Descargar adjunto del backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar adjunto del backend": {
+      "main": [
+        [
+          {
+            "node": "Reunir adjuntos en un solo correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reunir adjuntos en un solo correo": {
+      "main": [
+        [
+          {
+            "node": "Enviar con adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar con adjuntos": {
+      "main": [
+        [
+          {
+            "node": "Leer el correo enviado (Message-ID)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar sin adjuntos": {
+      "main": [
+        [
+          {
+            "node": "Leer el correo enviado (Message-ID)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer el correo enviado (Message-ID)": {
+      "main": [
+        [
+          {
+            "node": "Resultado del envío",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Bogota"
+  },
+  "pinData": {},
+  "tags": []
+}

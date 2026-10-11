@@ -3,12 +3,12 @@ name: project-manager
 description: Gestiona el ciclo de trabajo de un proyecto asistido por IA con el tablero de tareas, las specs y el historial en ia_contexto/. Úsala para leer el backlog, elegir la siguiente tarea, mover tareas entre estados, registrar historial, cerrar tareas con evidencia de pruebas, o crear ia_contexto/ en un repo nuevo.
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 metadata:
-  proyecto: "{{PROYECTO}}"
+  proyecto: "Sistema de Gestión Documental (SGD)"
   skills: .agents/skills/
   estado: ia_contexto/
 ---
 
-# Project Manager — {{PROYECTO}}
+# Project Manager — Sistema de Gestión Documental (SGD)
 
 Coordina el trabajo de agentes sobre el proyecto: qué hay que hacer, en qué orden, con qué spec y con qué evidencia se da por cerrado.
 
@@ -93,16 +93,16 @@ Mover una tarea significa **retirarla del origen y agregarla al destino**, conse
 ## Formato de tarea
 
 ```markdown
-- [ ] {{PREFIJO_TAREAS}}-001: Agregar validación del formulario de login
+- [ ] SGD-001: Agregar validación del formulario de login
   Spec: ia_contexto/spec/requirements.md#rf-001
   Tipo: feature
   Prioridad: media
   Agente sugerido: cualquiera
 ```
 
-- `ID: descripción` es lo mínimo obligatorio. IDs con el prefijo del proyecto (`{{PREFIJO_TAREAS}}`) y número correlativo de 3 dígitos. Es el mismo ID que va en la rama y en el commit (skill `git`).
+- `ID: descripción` es lo mínimo obligatorio. IDs con el prefijo del proyecto (`SGD`) y número correlativo de 3 dígitos. Es el mismo ID que va en la rama y en el commit (skill `git`).
 - Campos opcionales, solo si aportan: `Spec:`, `Tipo: bug|feature|refactor|docs|test|chore`, `Prioridad:`, `Responsable:`, `Estimación:`, `Depende de:`, `Bloqueo:`, `Etiquetas: a, b`, `Skills: a, b`, `Requisito: RF-xxx`. En revisión: `Evidencia:` (qué se ejecutó y su resultado) y `Pendiente:`.
-- Si el proyecto trabaja por historias y puntos, añádelos al título: `{{PREFIJO_TAREAS}}-012: Generar consecutivo (HU-003, RF-003) · 5 pts`.
+- Si el proyecto trabaja por historias y puntos, añádelos al título: `SGD-012: Generar consecutivo (HU-003, RF-003) · 5 pts`.
 - Todo lo indentado bajo la tarea (metadata y notas) se conserva al mover la tarjeta; puedes dejar notas de cierre ahí.
 - Plantillas de tareas nuevas: `ia_contexto/plantillas/<tipo>.md` (bug, feature, refactor). Si no existen, usa el formato de arriba.
 - Si una tarea heredada no tiene ID, conserva su texto tal cual. Asigna un ID nuevo solo al normalizar el backlog con permiso, y anótalo en `historial.md`.
@@ -112,16 +112,16 @@ Mover una tarea significa **retirarla del origen y agregarla al destino**, conse
 Si una tarea supera ~4 horas de trabajo o toca más de 3 archivos independientes, divídela en subtareas con IDs correlativos y dependencias explícitas:
 
 ```markdown
-- [ ] {{PREFIJO_TAREAS}}-010: Implementar módulo de autenticación
+- [ ] SGD-010: Implementar módulo de autenticación
   Prioridad: alta
   Estimación: 6h
 
-- [ ] {{PREFIJO_TAREAS}}-010a: Crear formulario de login
-  Depende de: {{PREFIJO_TAREAS}}-010
+- [ ] SGD-010a: Crear formulario de login
+  Depende de: SGD-010
   Estimación: 1.5h
 
-- [ ] {{PREFIJO_TAREAS}}-010b: Validar credenciales contra la API
-  Depende de: {{PREFIJO_TAREAS}}-010a
+- [ ] SGD-010b: Validar credenciales contra la API
+  Depende de: SGD-010a
   Estimación: 1.5h
 ```
 
@@ -141,7 +141,7 @@ Así se cierra progreso parcial y ninguna tarea queda atrapada en revisión por 
 ### Entrada de historial
 
 ```markdown
-## AAAA-MM-DD — {{PREFIJO_TAREAS}}-001 cerrada
+## AAAA-MM-DD — SGD-001 cerrada
 Cambio: validación del login en src/features/auth/LoginForm.tsx
 Tests: {{CMD_TEST}} (12 pasan, 0 fallan)
 Seguridad: sin secretos nuevos; input validado antes de enviar
@@ -154,7 +154,7 @@ Si el proyecto debe demostrar cobertura de requisitos (proyecto académico, clie
 
 | Requisito | Tarea(s) | Prueba(s) | Commit | Estado |
 |---|---|---|---|---|
-| RF-001 | {{PREFIJO_TAREAS}}-001 | TEST-RF-001-01 | a1b2c3d | ✅ |
+| RF-001 | SGD-001 | TEST-RF-001-01 | a1b2c3d | ✅ |
 
 Actualízala al cerrar cada tarea.
 
@@ -173,8 +173,8 @@ Una skill vacía o genérica estorba más de lo que ayuda: llénala con datos re
 
 Cuando el usuario pida inicializar el sistema:
 
-1. Copia `templates/ia_contexto/` de esta skill a la raíz del repo como `ia_contexto/` (sin sobrescribir archivos existentes) y reemplaza `{{PROYECTO}}`, `{{PREFIJO_TAREAS}}` y la fecha.
-2. Si hay documento fuente o información suficiente, llena `spec/product.md` y `spec/requirements.md` siguiendo `references/rf-for-ia.md`. Si no, deja en `tareas-faltantes.md` la tarea `{{PREFIJO_TAREAS}}-000: Levantamiento de requisitos`.
+1. Copia `templates/ia_contexto/` de esta skill a la raíz del repo como `ia_contexto/` (sin sobrescribir archivos existentes) y reemplaza `Sistema de Gestión Documental (SGD)`, `SGD` y la fecha.
+2. Si hay documento fuente o información suficiente, llena `spec/product.md` y `spec/requirements.md` siguiendo `references/rf-for-ia.md`. Si no, deja en `tareas-faltantes.md` la tarea `SGD-000: Levantamiento de requisitos`.
 3. Borra lo opcional que el proyecto no vaya a usar (`trazabilidad.md`, `historias/`, `acceptance-tests/`, `diseno/`).
 4. Registra la inicialización en `historial.md`.
 

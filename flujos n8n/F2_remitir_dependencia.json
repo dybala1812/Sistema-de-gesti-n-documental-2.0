@@ -1,0 +1,852 @@
+{
+  "name": "SGD - F2 Remitir a dependencia",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "archivo-central/remitir",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "914866cf-69e0-45de-925e-baf21dbbf7fd",
+      "name": "Webhook remitir",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "4cc7a5e7-0c65-493e-93e0-e9870303a649",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Header Auth SGD"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Valida lo que envia la aplicacion al pulsar \"Remitir\" (o \"Devolver\")\nconst b = $json.body || {};\nconst errores = [];\nconst comunicacion_id = parseInt(b.comunicacion_id, 10);\nconst dependencia_id = parseInt(b.dependencia_id, 10);\nconst modo = b.modo === 'devolver' ? 'devolver' : 'remitir';\nlet plazo = parseInt(b.plazo_dias, 10);\nif (!(plazo >= 1 && plazo <= 60)) plazo = 5; // plazo por defecto: 5 dias habiles\nif (!comunicacion_id) errores.push('Falta comunicacion_id.');\nif (!dependencia_id) errores.push('Falta dependencia_id.');\nconst adjuntos_ids = Array.isArray(b.adjuntos_ids) ? b.adjuntos_ids.map(Number).filter(Boolean) : null; // null = todos\nreturn { json: {\n  valido: errores.length === 0, errores,\n  comunicacion_id, dependencia_id, modo, plazo_dias: plazo,\n  mensaje: (b.mensaje || '').toString().slice(0, 5000),\n  adjuntos_ids,\n  usuario: b.usuario || 'archivo_central'\n} };"
+      },
+      "id": "d6f5d396-4c8f-4e4b-b6ef-e2baa2a5cec0",
+      "name": "Validar solicitud",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e351dc44-a4b0-4433-8c38-ede2abef5592",
+              "leftValue": "={{ $json.valido }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4c43406d-788d-4053-95f0-a74b248643cb",
+      "name": "¿Solicitud válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, errores: $json.errores } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "874e4327-691d-43c4-8d0b-0214d239314e",
+      "name": "Responder 400",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "comunicaciones",
+        "returnAll": true,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Validar solicitud').first().json.comunicacion_id }}"
+            }
+          ]
+        }
+      },
+      "id": "cf66b3f8-bf54-449e-91bc-b34e5857db6a",
+      "name": "Leer comunicación",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        660,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "",
+          "name": "Supabase archivo central"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "dependencias",
+        "returnAll": true,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Validar solicitud').first().json.dependencia_id }}"
+            }
+          ]
+        }
+      },
+      "id": "5355a381-1e6b-41e8-83f4-3528821201b6",
+      "name": "Leer dependencia",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        880,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "",
+          "name": "Supabase archivo central"
+        }
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "comunicacion_adjuntos",
+        "returnAll": true,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "comunicacion_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Validar solicitud').first().json.comunicacion_id }}"
+            },
+            {
+              "keyName": "estado",
+              "condition": "eq",
+              "keyValue": "guardado"
+            }
+          ]
+        }
+      },
+      "id": "76656fb3-9274-4f8a-9833-2a7ebdfe1d9c",
+      "name": "Leer adjuntos",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "",
+          "name": "Supabase archivo central"
+        }
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Revisa estado, dependencia y adjuntos, y arma el correo para la dependencia\nconst s = $('Validar solicitud').first().json;\nconst com = $('Leer comunicación').first().json || {};\nconst dep = $('Leer dependencia').first().json || {};\nconst adjTodos = $('Leer adjuntos').all().map(i => i.json).filter(a => a && a.id);\nconst errores = [];\nlet codigo = 422;\n\nif (!com.id) { errores.push('La comunicación no existe.'); codigo = 404; }\nconst permitidos = s.modo === 'devolver' ? ['respondida_dependencia'] : ['nueva', 'devuelta'];\nif (com.id && !permitidos.includes(com.estado)) {\n  errores.push(`No se puede ${s.modo} una comunicación en estado \"${com.estado}\".`); codigo = 409;\n}\nif (!dep.id) errores.push('La dependencia no existe.');\nelse if (dep.activo === false) errores.push('La dependencia está inactiva.');\n\n// Correos de la dependencia: principal + copias (separados por coma o punto y coma)\nconst limpiar = t => (t || '').split(/[;,]/).map(x => x.trim().toLowerCase()).filter(x => /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(x));\nconst para = limpiar(dep.correo);\nconst copia = limpiar(dep.correos_cc).filter(c => !para.includes(c));\nif (dep.id && !para.length) errores.push(`La dependencia ${dep.nombre || ''} no tiene un correo válido.`);\n\n// Adjuntos: los elegidos en la app o, si no eligió, todos los guardados\nconst adjuntos = (s.adjuntos_ids ? adjTodos.filter(a => s.adjuntos_ids.includes(Number(a.id))) : adjTodos)\n  .sort((a, b) => (a.orden || 0) - (b.orden || 0));\nconst total = adjuntos.reduce((t, a) => t + (Number(a.tamano_bytes) || 0), 0);\nconst LIMITE = 20 * 1024 * 1024; // Gmail admite 25 MB; se deja margen por la codificacion\nif (total > LIMITE) { errores.push(`Los adjuntos suman ${(total / 1048576).toFixed(1)} MB y el límite es 20 MB. Elija menos archivos.`); codigo = 413; }\n\n// Fecha limite en dias habiles (sin festivos)\nconst limite = new Date();\nlet d = s.plazo_dias;\nwhile (d > 0) { limite.setDate(limite.getDate() + 1); const w = limite.getDay(); if (w !== 0 && w !== 6) d--; }\nconst fecha_limite = limite.toISOString().slice(0, 10);\n\nconst esc = t => String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst etiqueta = `[SGD ${com.consecutivo || ''}]`;\nconst asunto = `${etiqueta} ${s.modo === 'devolver' ? 'Ajuste solicitado: ' : ''}${com.asunto || 'Comunicación'}`;\nconst lista = adjuntos.length ? '<ul>' + adjuntos.map(a => `<li>${esc(a.nombre_archivo)}</li>`).join('') + '</ul>' : '<p>Sin adjuntos.</p>';\nconst intro = s.modo === 'devolver'\n  ? '<p>Archivo Central le devuelve esta comunicación para que <b>ajuste la respuesta</b>.</p>'\n  : '<p>Archivo Central le remite la siguiente comunicación para su trámite.</p>';\nconst html = `${intro}\n<table cellpadding=\"4\" style=\"border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px\">\n<tr><td><b>Consecutivo</b></td><td>${esc(com.consecutivo)}</td></tr>\n<tr><td><b>Remitente</b></td><td>${esc(com.remitente_nombre)} &lt;${esc(com.remitente_email)}&gt;</td></tr>\n<tr><td><b>Fecha de recepción</b></td><td>${esc((com.fecha_recepcion || '').slice(0, 10))}</td></tr>\n<tr><td><b>Asunto</b></td><td>${esc(com.asunto)}</td></tr>\n<tr><td><b>Responder antes de</b></td><td>${fecha_limite}</td></tr>\n</table>\n${s.mensaje ? `<p><b>Mensaje de Archivo Central:</b><br>${esc(s.mensaje).replace(/\\n/g, '<br>')}</p>` : ''}\n<p><b>Texto original:</b></p>\n<blockquote style=\"border-left:3px solid #ccc;padding-left:8px;color:#444\">${esc((com.cuerpo || '').slice(0, 8000)).replace(/\\n/g, '<br>')}</blockquote>\n<p><b>Adjuntos:</b></p>${lista}\n<p style=\"color:#7f6000\"><b>Importante:</b> responda a este mismo correo y <b>no cambie el asunto</b>; así su respuesta queda asociada automáticamente a ${esc(com.consecutivo)}.</p>`;\n\nreturn [{ json: {\n  ok: errores.length === 0, errores, codigo,\n  comunicacion_id: s.comunicacion_id, consecutivo: com.consecutivo, dependencia_id: dep.id,\n  dependencia: dep.nombre, para: para.join(','), copia: copia.join(','),\n  asunto, html, fecha_limite, modo: s.modo, usuario: s.usuario,\n  adjuntos: adjuntos.map(a => ({ id: a.id, nombre: a.nombre_archivo }))\n} }];"
+      },
+      "id": "572423c0-acb6-4472-9df2-ec94399a5fa2",
+      "name": "Armar correo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ab14b146-2928-4b81-b872-1090e4503e42",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "512815b4-fb92-43d5-b055-75f56eb6db8b",
+      "name": "¿Se puede enviar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, errores: $json.errores } }}",
+        "options": {
+          "responseCode": "={{ $json.codigo }}"
+        }
+      },
+      "id": "66387d4e-6e7e-443e-a35a-17a0f725d5c1",
+      "name": "Responder error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1760,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Un item por adjunto a descargar del backend; si no hay, un item marcador\nconst c = $input.first().json;\nif (!c.adjuntos.length) return [{ json: { sin_adjuntos: true } }];\nreturn c.adjuntos.map((a, i) => ({ json: { adjunto_id: a.id, nombre: a.nombre, orden: i } }));"
+      },
+      "id": "f5391d52-8412-48cd-b4a2-728e362e31ae",
+      "name": "Preparar descargas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a18d1607-16f0-453d-bfc6-5eb3ddcae08a",
+              "leftValue": "={{ $json.sin_adjuntos === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "41a0e392-5a60-4657-a4b9-634042183035",
+      "name": "¿Sin adjuntos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://localhost:3000/api/v1/comunicaciones/adjuntos/{{ $json.adjunto_id }}/archivo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "archivo"
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "id": "c9bea6f9-9cc9-4475-bf4a-62c8f93e118a",
+      "name": "Descargar adjunto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Backend SGD"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Junta todos los archivos descargados en UN item (attachment_0, attachment_1, ...)\n// para que Gmail los envie en un solo correo\nconst correo = $('Armar correo').first().json;\nconst binary = {};\nconst nombres = [];\nlet fallidos = [];\n$input.all().forEach(it => {\n  if (it.json && it.json.sin_adjuntos) return;\n  const b = it.binary && it.binary.archivo;\n  if (!b) { fallidos.push(it.json && it.json.nombre); return; }\n  const k = `attachment_${nombres.length}`;\n  binary[k] = b;\n  nombres.push(k);\n});\nreturn [{ json: { ...correo, binarios: nombres.join(','), adjuntos_fallidos: fallidos.filter(Boolean) }, binary }];"
+      },
+      "id": "cc25833a-cd0e-45e6-94ce-9078a701f870",
+      "name": "Reunir adjuntos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d94bad61-2f9b-4ead-844f-551dc5a64e1d",
+              "leftValue": "={{ !!$json.binarios }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "466d04d2-631a-4836-bd69-792014f93236",
+      "name": "¿Lleva adjuntos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2640,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.para }}",
+        "subject": "={{ $json.asunto }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "ccList": "={{ $json.copia }}",
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "={{ $json.binarios }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "a25c5e03-f0b0-4a5a-bbff-4f22d3ae8c9f",
+      "name": "Enviar con adjuntos",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2860,
+        220
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail Archivo Central"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.para }}",
+        "subject": "={{ $json.asunto }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "ccList": "={{ $json.copia }}"
+        }
+      },
+      "id": "aedd5963-7366-4205-9ea8-7d0fff3cf83f",
+      "name": "Enviar sin adjuntos",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2860,
+        400
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail Archivo Central"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, errores: ['No se pudo enviar el correo a la dependencia. El estado no cambió; intente de nuevo.'] } }}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "572b428a-a54d-4c7a-b94b-28f5fedef7ef",
+      "name": "Responder 502",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3080,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "tableId": "comunicaciones",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Armar correo').first().json.comunicacion_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "estado",
+              "fieldValue": "={{ $('Armar correo').first().json.modo === 'devolver' ? 'devuelta' : 'remitida' }}"
+            },
+            {
+              "fieldId": "dependencia_id",
+              "fieldValue": "={{ $('Armar correo').first().json.dependencia_id }}"
+            },
+            {
+              "fieldId": "fecha_limite",
+              "fieldValue": "={{ $('Armar correo').first().json.fecha_limite }}"
+            },
+            {
+              "fieldId": "fecha_remision",
+              "fieldValue": "={{ $now.toISO() }}"
+            },
+            {
+              "fieldId": "gmail_thread_id",
+              "fieldValue": "={{ $json.threadId }}"
+            },
+            {
+              "fieldId": "ultimo_envio_id",
+              "fieldValue": "={{ $json.id }}"
+            }
+          ]
+        }
+      },
+      "id": "deba0c08-7aa5-4b23-984d-5ecd0e2af2ba",
+      "name": "Actualizar comunicación",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        3080,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "",
+          "name": "Supabase archivo central"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "create",
+        "tableId": "comunicacion_eventos",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "comunicacion_id",
+              "fieldValue": "={{ $('Armar correo').first().json.comunicacion_id }}"
+            },
+            {
+              "fieldId": "tipo",
+              "fieldValue": "={{ $('Armar correo').first().json.modo === 'devolver' ? 'devuelta' : 'remitida' }}"
+            },
+            {
+              "fieldId": "usuario",
+              "fieldValue": "={{ $('Armar correo').first().json.usuario }}"
+            },
+            {
+              "fieldId": "detalle",
+              "fieldValue": "={{ JSON.stringify({ dependencia: $('Armar correo').first().json.dependencia, para: $('Armar correo').first().json.para, copia: $('Armar correo').first().json.copia, adjuntos: $('Reunir adjuntos').first().json.binarios ? $('Reunir adjuntos').first().json.binarios.split(',').length : 0, adjuntos_fallidos: $('Reunir adjuntos').first().json.adjuntos_fallidos, fecha_limite: $('Armar correo').first().json.fecha_limite }) }}"
+            }
+          ]
+        }
+      },
+      "id": "c218758b-663a-4d16-b912-930d51cb1840",
+      "name": "Registrar evento",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        3300,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "",
+          "name": "Supabase archivo central"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, comunicacion_id: $('Armar correo').first().json.comunicacion_id, consecutivo: $('Armar correo').first().json.consecutivo, estado: $('Armar correo').first().json.modo === 'devolver' ? 'devuelta' : 'remitida', enviado_a: $('Armar correo').first().json.para, copia: $('Armar correo').first().json.copia, fecha_limite: $('Armar correo').first().json.fecha_limite, adjuntos_enviados: $('Reunir adjuntos').first().json.binarios ? $('Reunir adjuntos').first().json.binarios.split(',').length : 0, adjuntos_fallidos: $('Reunir adjuntos').first().json.adjuntos_fallidos } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "7e9b3c80-80d5-4453-9edb-bf266d80f284",
+      "name": "Responder 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3520,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "width": 700,
+        "height": 470,
+        "content": "## F2 · Remitir a dependencia (y devolver)\n\n**Disparador:** la aplicación llama al webhook al pulsar *Remitir* o *Devolver*.\nBody JSON: `comunicacion_id`, `dependencia_id`, `mensaje`, `plazo_dias` (por defecto 5 hábiles), `modo` (`remitir` | `devolver`), `adjuntos_ids` (opcional; si no viene se envían todos los guardados), `usuario`.\n\n**Qué hace:**\n1. Lee la comunicación, la dependencia y sus adjuntos en Supabase y valida el estado (remitir: *nueva* o *devuelta*; devolver: *respondida_dependencia*).\n2. Envía el correo a **todos los correos de la dependencia**: `dependencias.correo` va en *Para* y `dependencias.correos_cc` en *CC* (varios separados por coma).\n3. Descarga cada adjunto del backend y los envía juntos en un solo correo (máx. 20 MB).\n4. Asunto con la etiqueta `[SGD ENT-…]`; guarda el `threadId` de Gmail para que F1 reconozca la respuesta.\n5. Cambia el estado a *remitida* o *devuelta*, guarda la fecha límite y registra el evento.\n\nSi Gmail falla, responde 502 y el estado **no cambia**.\n\n**Antes de activar:** credenciales (Header Auth, Supabase, Gmail, Backend), URL real del backend y ejecutar `f2_remitir.sql`."
+      },
+      "id": "18833dd7-0031-43f9-b766-11c19d9e3fbf",
+      "name": "Notas",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -260
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook remitir": {
+      "main": [
+        [
+          {
+            "node": "Validar solicitud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar solicitud": {
+      "main": [
+        [
+          {
+            "node": "¿Solicitud válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Solicitud válida?": {
+      "main": [
+        [
+          {
+            "node": "Leer comunicación",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer comunicación": {
+      "main": [
+        [
+          {
+            "node": "Leer dependencia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer dependencia": {
+      "main": [
+        [
+          {
+            "node": "Leer adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer adjuntos": {
+      "main": [
+        [
+          {
+            "node": "Armar correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar correo": {
+      "main": [
+        [
+          {
+            "node": "¿Se puede enviar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Se puede enviar?": {
+      "main": [
+        [
+          {
+            "node": "Preparar descargas",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar descargas": {
+      "main": [
+        [
+          {
+            "node": "¿Sin adjuntos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Sin adjuntos?": {
+      "main": [
+        [
+          {
+            "node": "Reunir adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Descargar adjunto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar adjunto": {
+      "main": [
+        [
+          {
+            "node": "Reunir adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reunir adjuntos": {
+      "main": [
+        [
+          {
+            "node": "¿Lleva adjuntos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Lleva adjuntos?": {
+      "main": [
+        [
+          {
+            "node": "Enviar con adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enviar sin adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar con adjuntos": {
+      "main": [
+        [
+          {
+            "node": "Actualizar comunicación",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 502",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar sin adjuntos": {
+      "main": [
+        [
+          {
+            "node": "Actualizar comunicación",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 502",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar comunicación": {
+      "main": [
+        [
+          {
+            "node": "Registrar evento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar evento": {
+      "main": [
+        [
+          {
+            "node": "Responder 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

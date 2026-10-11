@@ -1,16 +1,89 @@
-# Historial — {{PROYECTO}}
+# Historial — Sistema de Gestión Documental (SGD)
 
 Bitácora cronológica, lo más reciente arriba. Una entrada por cierre, decisión o cambio relevante.
 
 <!-- Formato:
-## AAAA-MM-DD — {{PREFIJO_TAREAS}}-XXX cerrada | en revisión | decisión | título corto
+## AAAA-MM-DD — SGD-XXX cerrada | en revisión | decisión | título corto
 Cambio: qué se hizo y dónde
 Tests: comando ejecutado y resultado (o "no aplica (solo documentación)")
 Seguridad: secretos, validaciones, permisos revisados
 Commit: hash o "ninguno"
 -->
 
-## {{FECHA}} — Inicialización del contexto del proyecto
+## 2026-10-08 — Frontend · Visor de adjuntos para todos los formatos + rediseño de Archivo Central
+Cambio: VisorArchivos reescrito: PDF con react-pdf (páginas, zoom, ajuste al ancho, rotación; funciona en celular), Word .docx con docx-preview (ajuste al ancho, zoom; sin recorte del borde izquierdo), Excel .xlsx con exceljs (pestañas por hoja), texto/CSV/JSON/.eml, imágenes con zoom/rotación; aviso + descarga para formatos sin vista previa. Nueva dependencia docx-preview 0.4.1 (Apache-2.0). lib/pdfWorker.ts: worker del paquete en desarrollo, /pdf.worker.min.mjs en producción (como AreaDashboard). ArchivoCentralArea: sin segundo encabezado (el navbar de NOVA muestra "Archivo Central" bajo el usuario), menú lateral más grande y legible, fijo al hacer scroll y terminando en el footer, panel deslizable en celular, Correos sin asociar y Registro histórico conectados a Comunicaciones, sin contadores falsos, "Pronto" en secciones sin construir. Visor de vuelta en la columna izquierda (pedido del usuario). Pestañas y filtros de la Bandeja más grandes.
+Tests: tsc sin errores; navegador contra backend real: 2 PDF, 1 .docx (2 páginas, cabe completo) y 1 .txt se ven; celular 375 px sin desbordamiento, menú en panel, PDF ajustado.
+Observación: hay un botón/ruta "Eliminar definitivamente" (DELETE /api/comunicaciones/{id}/eliminar) marcado como solo pruebas pero sin restricción de entorno → choca con RN-AC-12 en producción.
+Commit: ninguno.
+
+## 2026-10-08 — Frontend · Detalle de comunicación a pantalla completa + token de pruebas
+Cambio: DetalleComunicacion pasa de panel lateral a vista de página como el mockup (volver, encabezado con acciones Remitir/Devolver/Enviar respuesta/Anular, línea de pasos con fechas, correo original, datos, historial legible); nuevo VisorArchivos (lista de adjuntos + vista previa PDF/imagen, Abrir, Descargar, Ampliar) que descarga por id con sgdFetchBlob. Token de pruebas SOLO desarrollo: frontend envía VITE_SGD_DEV_TOKEN con el atajo sin login; backend lo acepta en next dev (SGD_DEV_TOKEN) como usuario de prueba Archivo Central.
+Tests: tsc sin errores; probado en navegador contra el backend real (localhost:5173/archivo-central → 3 comunicaciones de Supabase, PDF real en el visor, pantalla completa, historial). Hallazgo: F1 registró "Workflow does not exist" al enviar el acuse → falta poner el ID de F5 en los flujos.
+Commit: ninguno.
+
+## 2026-10-07 — revisión | F5 · Envío de correo
+Resultado: F5 sin referencias ni conexiones rotas; su entrada/salida coincide con lo que mandan y leen F1–F4 (ok, message_id, contexto) y descarga adjuntos con GET /api/archivos/{id} (acepta el token de n8n).
+Corregido: (1) plantillas remision/devolucion no mostraban {mensaje} y devolucion usaba {plazo} vacío; recordatorio usaba {respuesta} y F4 envía {pendientes} → migración 20261007001000_plantillas_variables_n8n.sql (solo plantillas sin personalizar) + seed.sql; (2) GET /api/archivos/{id}: Content-Disposition con filename*=UTF-8'' para que el adjunto no llegue como "Certificado%20de%20notas.pdf".
+Tests: probar_local.sh OK (4 pruebas nuevas de plantillas); backend tsc/eslint OK.
+Commit: ninguno.
+
+## 2026-10-07 — revisión | Flujos n8n (flujos n8n/*_api.json) contra el backend
+Resultado: las 23 llamadas HTTP de F1, F2, F3, F4 y F6 coinciden con las rutas del backend (URL, campos del cuerpo y campos que leen los nodos de código); sin referencias ni conexiones rotas. Corregido lib/errors.ts: handleError respondía 500 en vez de 413/415/404, lo que hacía que F1 reintentara para siempre un correo con un adjunto grande o de formato no permitido.
+Pendiente (no corregido): el frontend remite/devuelve/responde llamando a /api/comunicaciones/{id}/... del backend, que solo cambia el estado en la BD y no envía correo; los webhooks de n8n F2 (bandeja/remitir) y F3 (bandeja/responder) no los llama nadie. Falta F5 en la carpeta. Placeholders BACKEND_URL_AQUI, REEMPLAZAR_ID_F5 y credenciales REEMPLAZAR.
+Tests: tsc OK; prueba directa de handleError (413/415/404/500).
+Commit: ninguno.
+
+## 2026-10-07 — decisión | 19 APIs del backend para los flujos n8n
+Cambio: migración 20261007000900_n8n_funciones.sql (8 funciones de n8n_funciones_supabase.sql revisadas + 11 nuevas para F2, F3, F4 y compartidas); backend: lib/n8n.ts (fábrica rutaN8N, lectores de campos, mapeo de errores PG→HTTP) y 19 rutas en app/api/n8n/**; contrato copiado a database/n8n/APIs_backend_n8n.md. D-19.
+Correcciones al SQL original: reintento de correo nuevo duplicaba la nota de adjuntos omitidos; la respuesta de dependencia no guardaba su Message-ID (no se detectaba reproceso); permisos fallaban sin rol service_role. probar_local.sh ahora muestra el error si fallan las pruebas.
+Tests: probar_local.sh ×3 — 9 migraciones, todas las pruebas OK (24 nuevas de funciones n8n) + concurrencia 40/40; backend tsc/eslint OK; next dev: 19 rutas → 401 sin token, 400 con datos inválidos, llegan a Supabase con datos válidos. Llamada real a Supabase no probada (sin credenciales).
+Commit: ninguno.
+
+## 2026-10-07 — decisión | Endpoint para que n8n cree comunicaciones
+Cambio: backend Next.js → app/api/n8n/comunicaciones/route.ts (POST, token N8N_SERVICE_TOKEN, validación, 201 creada / 200 ya existía) y esServicioN8N() en lib/auth.ts; BD → migración 20261007000800_n8n_registrar_comunicacion.sql (comunicación + adjuntos en una transacción, idempotente, EXECUTE solo para service_role). TABLAS_N8N.md rama C actualizada. D-18.
+Tests: database/scripts/probar_local.sh — 8 migraciones, todas las pruebas OK (5 nuevas de n8n) + concurrencia 40/40; backend tsc y eslint sin errores; next dev: 401 sin token/token malo, 400 JSON y datos inválidos. Registro real contra Supabase no probado (sin credenciales).
+Seguridad: comparación del token en tiempo constante; sin secretos en el repo.
+Commit: ninguno.
+
+## 2026-10-07 — SGD-080 en revisión | Frontend del módulo Comunicaciones
+Cambio: nuevo módulo "Comunicaciones" en el Panel de Área de NOVA (barra lateral + barra móvil), con Bandeja (pestañas por estado incl. Devuelta, filtros, alerta de remitidas ≥5 días), detalle con línea de pasos/historial y acciones Remitir, Devolver, Enviar respuesta y Anular; Correos sin asociar; Registro histórico por mes. Datos simulados en lib/comunicacionesApi.ts con las mismas reglas de estado que la BD. Decisiones D-16 (dentro de NOVA) y D-17 (colores de NOVA).
+Tests: tsc sin errores en el módulo; verificación manual en navegador (escritorio y móvil). Corregido: el diálogo de acción cerraba el panel de detalle; fecha límite desfasada por zona horaria.
+Seguridad: sin secretos; datos de ejemplo ficticios.
+Commit: ninguno.
+
+## 2026-10-07 — decisión | n8n limitado a la Bandeja de comunicaciones
+Cambio: D-15 e I-17; TABLAS_N8N.md reescrito solo con F1–F6 (correo entrante, remitir, responder, recordatorios, envío, errores) y subida de adjuntos al backend; F7–F11 pasan al backend (architecture.md, README del backend).
+Tests: no aplica (solo documentación).
+Commit: ninguno.
+
+## 2026-10-07 — decisión | n8n: archivos por el backend, tablas directo en Supabase
+Cambio: TABLAS_N8N.md con sección de arquitectura de dos destinos y contrato de POST/GET /api/archivos (token de servicio de n8n, validación, respuesta, errores); D-03 precisado. Agregar el endpoint al backend cuando se decida P-11.
+Tests: no aplica (solo documentación).
+Commit: ninguno.
+
+## 2026-10-07 — SGD-007 en revisión | Base de datos del módulo
+Cambio: backned_sistema_gestion_documental/supabase/ con 6 migraciones (catálogos, usuarios sincronizados desde NOVA sin login, archivos por id, lotes, transferencias con regla año − 2, documentos con anti-duplicados, comunicaciones con consecutivos atómicos y máquina de estados, historias, auditoría inmutable, permisos, RLS y vistas), seed.sql, seed_demo.sql, tests y script de prueba. Decisiones D-13 (sin login, token de NOVA) y D-14; preguntas P-16 (actualizada) y P-19.
+Tests: scripts/probar_local.sh — 79 verificaciones OK + concurrencia 40/40.
+Seguridad: sin secretos; RLS activo y anon/authenticated revocados; sin DELETE; auditoría append-only; datos demo ficticios.
+Commit: ninguno.
+
+## 2026-10-07 — decisión | Mockups de escritorio y móvil como referencia
+Cambio: agregado ia_contexto/diseno/mockups_archivo_central_y_movil.html (14 pantallas de escritorio + 3 móviles) y su descripción en diseno/README.md; diferencias con el F-02 registradas como I-08…I-16 y preguntas P-17, P-18; enlazado desde spec/product.md, CLAUDE.md y skill frontend.
+Tests: no aplica (solo documentación).
+Commit: ninguno.
+
+## 2026-10-07 — decisión | Archivos locales en carpetas referenciados por id
+Cambio: D-02, D-03, RN-AC-14, architecture.md (nueva sección "Almacenamiento de archivos", tabla `archivo`), requirements RF-AC-008, CLAUDE.md/AGENTS.md y skills: los archivos se guardan localmente en carpetas y la BD los referencia por id (`archivo_id`). Registrada I-07 contra el F-02.
+Tests: no aplica (solo documentación).
+Commit: ninguno.
+
+## 2026-10-07 — decisión | Contexto del módulo Archivo Central desde el F-02 v1.1
+Cambio: copiado F-02_Archivo_Central_v1.1.docx (+ extracción .md) a fuentes/; llenados spec/product.md, requirements.md (RF-AC-001…024 con criterios Dado/Cuando/Entonces, RNF-AC-01…10), business-rules.md (RN-AC-01…14 + transiciones de estado), architecture.md (nuevo), decisiones.md (D-01…D-12, P-01…P-16, I-01…I-06), trazabilidad.md, historias/archivo-central.md; backlog SGD-000…SGD-070 en tareas-faltantes.md; skills (contexto, desarrollo, seguridad, testing, memoria) y CLAUDE.md/AGENTS.md con reglas de dominio.
+Tests: no aplica (solo documentación).
+Seguridad: sin secretos ni datos personales reales.
+Commit: ninguno.
+
+## 2026-10-07 — Inicialización del contexto del proyecto
 Cambio: creada ia_contexto/ desde las plantillas de la skill project-manager.
 Tests: no aplica (solo documentación).
 Commit: ninguno.
