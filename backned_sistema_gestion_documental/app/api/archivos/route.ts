@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { obtenerUsuarioAutenticado, extraerToken } from "../../../lib/auth";
 import { guardarArchivo } from "../../../lib/archivos";
 import { assertSupabaseConfig } from "../../../lib/supabase";
+import { SolicitudInvalida } from "../../../lib/n8n";
 import { handleError, jsonResponse, errorResponse } from "../../../lib/errors";
 
 function esN8N(request: NextRequest): boolean {
@@ -24,17 +25,17 @@ export async function POST(request: NextRequest) {
     const contextoRaw = String(formData.get("contexto") ?? "{}");
 
     if (!archivo || !(archivo instanceof File)) {
-      return errorResponse("Campo 'archivo' es obligatorio", 400);
+      throw new SolicitudInvalida("Campo 'archivo' es obligatorio", "archivo", "obligatorio");
     }
     if (!categoria) {
-      return errorResponse("Campo 'categoria' es obligatorio", 400);
+      throw new SolicitudInvalida("Campo 'categoria' es obligatorio", "categoria", "obligatorio");
     }
 
     let contexto: Record<string, unknown> = {};
     try {
       contexto = JSON.parse(contextoRaw);
     } catch {
-      return errorResponse("Campo 'contexto' debe ser JSON válido", 400);
+      throw new SolicitudInvalida("Campo 'contexto' debe ser JSON válido", "contexto", "formato");
     }
 
     const bytes = await archivo.arrayBuffer();
@@ -50,6 +51,13 @@ export async function POST(request: NextRequest) {
 
     return jsonResponse(guardado, 201);
   } catch (err) {
+    if (err instanceof SolicitudInvalida) {
+      return errorResponse("Datos inválidos", 400, {
+        detalle: err.message,
+        campo: err.campo,
+        tipo: err.tipo,
+      });
+    }
     return handleError(err);
   }
 }

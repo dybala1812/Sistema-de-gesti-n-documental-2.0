@@ -2,7 +2,8 @@ import { NextRequest } from "next/server";
 import { supabase } from "../../../../../lib/supabase";
 import { obtenerUsuarioAutenticado, puedeGestionarComunicaciones } from "../../../../../lib/auth";
 import { obtenerComunicacion } from "../../../../../lib/comunicaciones";
-import { handleError, jsonResponse, notFound, forbidden, errorResponse } from "../../../../../lib/errors";
+import { SolicitudInvalida, idRuta } from "../../../../../lib/n8n";
+import { errorResponse, handleError, jsonResponse, notFound, forbidden } from "../../../../../lib/errors";
 
 export async function POST(
   request: NextRequest,
@@ -14,9 +15,7 @@ export async function POST(
       return forbidden("Solo Archivo Central puede crear comunicaciones");
     }
 
-    const { id } = await params;
-    const correoId = Number(id);
-    if (!Number.isFinite(correoId)) return notFound();
+    const correoId = idRuta(await params);
 
     const { data: correo, error: correoError } = await supabase
       .from("correo_sin_asociar")
@@ -77,6 +76,13 @@ export async function POST(
     const nueva = await obtenerComunicacion(nuevaId);
     return jsonResponse(nueva ?? creada);
   } catch (err) {
+    if (err instanceof SolicitudInvalida) {
+      return errorResponse("Datos inválidos", 400, {
+        detalle: err.message,
+        campo: err.campo,
+        tipo: err.tipo,
+      });
+    }
     return handleError(err);
   }
 }

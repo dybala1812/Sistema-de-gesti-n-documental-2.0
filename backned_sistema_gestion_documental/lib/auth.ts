@@ -7,6 +7,7 @@
  *  3. Se sincroniza el usuario en la tabla `usuario` con fn_sincronizar_usuario_nova.
  *  4. Se verifica que tenga perfil asignado y esté activo.
  */
+import { timingSafeEqual } from "crypto";
 import { supabase, assertSupabaseConfig } from "./supabase";
 
 export type PerfilSGD =
@@ -70,8 +71,36 @@ async function fetchPerfilNova(token: string): Promise<PerfilNova> {
   return (await res.json()) as PerfilNova;
 }
 
+// ── SOLO DESARROLLO: token de pruebas ──────────────────────────────────────
+// Con `next dev` (NODE_ENV !== "production") y SGD_DEV_TOKEN definido, ese token
+// se acepta sin consultar a NOVA y representa a un usuario de prueba de Archivo
+// Central (se sincroniza en la tabla `usuario` como cualquier otro). En
+// producción (`next build` / `next start`) esta rama nunca se activa.
+const PERFIL_NOVA_DESARROLLO: PerfilNova = {
+  id: "00000000-0000-0000-0000-000000000000",
+  email: "dev@localhost",
+  username: "dev",
+  nombre: "Usuario",
+  apellido: "Desarrollo",
+  tipo_documento: "CC",
+  cedula: "0",
+  roles: [],
+  is_staff: false,
+  activo: true,
+  perfil_tipo: "admin_area",
+};
+
+function esTokenDesarrollo(token: string): boolean {
+  const esperado = process.env.SGD_DEV_TOKEN;
+  if (process.env.NODE_ENV === "production" || !esperado) return false;
+  const a = Buffer.from(token);
+  const b = Buffer.from(esperado);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 export async function validarTokenNOVA(token: string): Promise<UsuarioSGD> {
-  const perfil = await fetchPerfilNova(token);
+  const esDesarrollo = esTokenDesarrollo(token);
+  const perfil = esDesarrollo ? PERFIL_NOVA_DESARROLLO : await fetchPerfilNova(token);
 
   const { data: usuario, error } = await supabase.rpc("fn_sincronizar_usuario_nova", {
     p_perfil: perfil as unknown as Record<string, unknown>,
@@ -82,6 +111,13 @@ export async function validarTokenNOVA(token: string): Promise<UsuarioSGD> {
   }
 
   const u = Array.isArray(usuario) ? usuario[0] : usuario;
+
+  // Usuario de prueba: perfil Archivo Central si aún no tiene uno asignado.
+  if (esDesarrollo && !u.perfil) {
+    const { error: errPerfil } = await supabase.from("usuario").update({ perfil: "archivo_central" }).eq("id", u.id);
+    if (errPerfil) throw new Error(`Error asignando perfil de desarrollo: ${errPerfil.message}`);
+    u.perfil = "archivo_central";
+  }
 
   const { data: puede } = await supabase.rpc("fn_usuario_puede_ingresar", {
     p_usuario_id: u.id,
@@ -112,12 +148,38 @@ export function extraerToken(request: Request): string | null {
   return token;
 }
 
+/**
+ * SOLO DESARROLLO: si SGD_DEV_TOKEN está configurado y el request lo envía,
+ * se devuelve un usuario de prueba sin consultar NOVA. Útil cuando NOVA no
+ * está disponible localmente. Nunca activar en producción.
+ */
+function usuarioDesarrollo(token: string): UsuarioSGD | null {
+  const esperado = process.env.SGD_DEV_TOKEN;
+  if (!esperado || process.env.NODE_ENV === "production") return null;
+  const a = Buffer.from(token);
+  const b = Buffer.from(esperado);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  return {
+    id: 1,
+    nova_user_id: "dev-user",
+    email: "dev@localhost",
+    nombre: "Usuario",
+    apellido: "Desarrollo",
+    perfil: "archivo_central",
+    dependencia_id: null,
+    nova_is_staff: true,
+    nova_roles: ["ADMIN"],
+  };
+}
+
 export async function obtenerUsuarioAutenticado(request: Request): Promise<UsuarioSGD> {
   assertSupabaseConfig();
   const token = extraerToken(request);
   if (!token) {
     throw new Response(JSON.stringify({ error: "Token requerido" }), { status: 401 });
   }
+  const dev = usuarioDesarrollo(token);
+  if (dev) return dev;
   return validarTokenNOVA(token);
 }
 
@@ -146,4 +208,17 @@ export function puedeVerDependencia(usuario: UsuarioSGD, dependenciaId: number |
     return dependenciaId !== null && usuario.dependencia_id === dependenciaId;
   }
   return false;
+}
+
+/**
+ * Indica si la petición viene de n8n: Authorization: Bearer <N8N_SERVICE_TOKEN>.
+ * Comparación en tiempo constante. Si la variable no está configurada, nadie pasa.
+ */
+export function esServicioN8N(request: Request): boolean {
+  const esperado = process.env.N8N_SERVICE_TOKEN;
+  const recibido = extraerToken(request);
+  if (!esperado || !recibido) return false;
+  const a = Buffer.from(recibido);
+  const b = Buffer.from(esperado);
+  return a.length === b.length && timingSafeEqual(a, b);
 }

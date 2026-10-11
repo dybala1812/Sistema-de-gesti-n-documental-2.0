@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { supabase } from "../../../../../lib/supabase";
 import { obtenerUsuarioAutenticado, puedeGestionarComunicaciones } from "../../../../../lib/auth";
 import { obtenerComunicacion } from "../../../../../lib/comunicaciones";
+import { SolicitudInvalida, leer, parseBody, idRuta } from "../../../../../lib/n8n";
 import { handleError, jsonResponse, notFound, forbidden, errorResponse } from "../../../../../lib/errors";
 
 export async function POST(
@@ -14,13 +15,10 @@ export async function POST(
       return forbidden("Solo Archivo Central puede devolver comunicaciones");
     }
 
-    const { id } = await params;
-    const comunicacionId = Number(id);
-    if (!Number.isFinite(comunicacionId)) return notFound();
-
-    const body = await request.json();
-    const mensaje = String(body.mensaje ?? "");
-    const messageIdEnviado = body.message_id_enviado ? String(body.message_id_enviado) : null;
+    const comunicacionId = idRuta(await params);
+    const b = await parseBody(request);
+    const mensaje = leer.texto(b, "mensaje") ?? "";
+    const messageIdEnviado = leer.texto(b, "message_id_enviado");
 
     const previa = await obtenerComunicacion(comunicacionId);
     if (!previa) return notFound("Comunicación no encontrada");
@@ -42,6 +40,13 @@ export async function POST(
     const actualizada = await obtenerComunicacion(comunicacionId);
     return jsonResponse(actualizada ?? data);
   } catch (err) {
+    if (err instanceof SolicitudInvalida) {
+      return errorResponse("Datos inválidos", 400, {
+        detalle: err.message,
+        campo: err.campo,
+        tipo: err.tipo,
+      });
+    }
     return handleError(err);
   }
 }

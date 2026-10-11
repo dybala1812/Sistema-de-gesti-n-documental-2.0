@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { supabase } from "../../../../../lib/supabase";
 import { obtenerUsuarioAutenticado, puedeGestionarComunicaciones } from "../../../../../lib/auth";
 import { obtenerComunicacion } from "../../../../../lib/comunicaciones";
+import { SolicitudInvalida, leer, parseBody, idRuta } from "../../../../../lib/n8n";
 import { handleError, jsonResponse, notFound, forbidden, errorResponse } from "../../../../../lib/errors";
 
 export async function POST(
@@ -14,13 +15,9 @@ export async function POST(
       return forbidden("Solo Archivo Central puede anular comunicaciones");
     }
 
-    const { id } = await params;
-    const comunicacionId = Number(id);
-    if (!Number.isFinite(comunicacionId)) return notFound();
-
-    const body = await request.json();
-    const motivo = String(body.motivo ?? "").trim();
-    if (!motivo) return errorResponse("El motivo de anulación es obligatorio");
+    const comunicacionId = idRuta(await params);
+    const b = await parseBody(request);
+    const motivo = leer.texto(b, "motivo", true) as string;
 
     const previa = await obtenerComunicacion(comunicacionId);
     if (!previa) return notFound("Comunicación no encontrada");
@@ -41,6 +38,13 @@ export async function POST(
     const actualizada = await obtenerComunicacion(comunicacionId);
     return jsonResponse(actualizada ?? data);
   } catch (err) {
+    if (err instanceof SolicitudInvalida) {
+      return errorResponse("Datos inválidos", 400, {
+        detalle: err.message,
+        campo: err.campo,
+        tipo: err.tipo,
+      });
+    }
     return handleError(err);
   }
 }

@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { obtenerUsuarioAutenticado, puedeVerDependencia } from "../../../../lib/auth";
 import { obtenerComunicacion } from "../../../../lib/comunicaciones";
-import { handleError, jsonResponse, notFound, forbidden } from "../../../../lib/errors";
+import { SolicitudInvalida, idRuta } from "../../../../lib/n8n";
+import { errorResponse, handleError, jsonResponse, notFound, forbidden } from "../../../../lib/errors";
 
 export async function GET(
   request: NextRequest,
@@ -9,12 +10,7 @@ export async function GET(
 ) {
   try {
     const usuario = await obtenerUsuarioAutenticado(request);
-    const { id } = await params;
-    const comunicacionId = Number(id);
-
-    if (!Number.isFinite(comunicacionId)) {
-      return notFound("Comunicación no válida");
-    }
+    const comunicacionId = idRuta(await params);
 
     const comunicacion = await obtenerComunicacion(comunicacionId);
     if (!comunicacion) {
@@ -27,6 +23,13 @@ export async function GET(
 
     return jsonResponse(comunicacion);
   } catch (err) {
+    if (err instanceof SolicitudInvalida) {
+      return errorResponse("Datos inválidos", 400, {
+        detalle: err.message,
+        campo: err.campo,
+        tipo: err.tipo,
+      });
+    }
     return handleError(err);
   }
 }

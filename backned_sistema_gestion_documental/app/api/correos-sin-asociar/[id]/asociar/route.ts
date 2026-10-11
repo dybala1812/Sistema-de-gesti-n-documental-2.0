@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { supabase } from "../../../../../lib/supabase";
 import { obtenerUsuarioAutenticado, puedeGestionarComunicaciones } from "../../../../../lib/auth";
 import { obtenerComunicacion } from "../../../../../lib/comunicaciones";
+import { SolicitudInvalida, leer, parseBody, idRuta } from "../../../../../lib/n8n";
 import { handleError, jsonResponse, notFound, forbidden, errorResponse } from "../../../../../lib/errors";
 
 export async function POST(
@@ -14,15 +15,9 @@ export async function POST(
       return forbidden("Solo Archivo Central puede asociar correos");
     }
 
-    const { id } = await params;
-    const correoId = Number(id);
-    if (!Number.isFinite(correoId)) return notFound();
-
-    const body = await request.json();
-    const comunicacionId = Number(body.comunicacion_id);
-    if (!Number.isFinite(comunicacionId)) {
-      return errorResponse("comunicacion_id es obligatorio");
-    }
+    const correoId = idRuta(await params);
+    const b = await parseBody(request);
+    const comunicacionId = leer.entero(b, "comunicacion_id", true) as number;
 
     const comunicacion = await obtenerComunicacion(comunicacionId);
     if (!comunicacion) return notFound("Comunicación no encontrada");
@@ -91,6 +86,13 @@ export async function POST(
     const actualizada = await obtenerComunicacion(comunicacionId);
     return jsonResponse(actualizada);
   } catch (err) {
+    if (err instanceof SolicitudInvalida) {
+      return errorResponse("Datos inválidos", 400, {
+        detalle: err.message,
+        campo: err.campo,
+        tipo: err.tipo,
+      });
+    }
     return handleError(err);
   }
 }

@@ -6,6 +6,8 @@ export type ApiError = {
   error: string;
   detalle?: string;
   codigo?: string;
+  campo?: string;
+  tipo?: string;
 };
 
 export function jsonResponse<T>(data: T, status = 200): Response {
@@ -30,6 +32,12 @@ export function notFound(message = "Recurso no encontrado"): Response {
 
 export function handleError(error: unknown): Response {
   if (error instanceof Response) return error;
+  // Errores con código HTTP propio (p. ej. lib/archivos.ts: 413 tamaño, 415 formato, 404 no existe).
+  // Sin esto n8n recibiría 500 y reintentaría el mismo correo indefinidamente.
+  const status = (error as { status?: unknown } | null)?.status;
+  if (error instanceof Error && typeof status === "number" && status >= 400 && status < 500) {
+    return errorResponse(error.message, status);
+  }
   const message = error instanceof Error ? error.message : "Error interno del servidor";
   console.error("[backend error]", error);
   return errorResponse(message, 500);
