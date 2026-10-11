@@ -1,0 +1,284 @@
+{
+  "name": "F6 · Manejo de errores",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "fffc0e93-26fd-4099-90d0-c71dc5f429dc",
+      "name": "Falla en un flujo",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        170
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst e = $input.first().json;\nconst msg = (e.execution?.error?.message || 'sin mensaje').toString().slice(0, 1000);\nreturn [{ json: {\n  flujo: e.workflow?.name || 'desconocido',\n  ejecucion: String(e.execution?.id ?? ''),\n  nodo: e.execution?.lastNodeExecuted || null,\n  mensaje: msg,\n  url: e.execution?.url || null,\n  hora: new Date().toISOString()\n} }];\n"
+      },
+      "id": "d3b405e6-d9b2-4155-af13-de0ed7823c82",
+      "name": "Preparar registro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        170
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/auditoria/error-flujo",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ flujo: $json.flujo, ejecucion: $json.ejecucion, nodo: $json.nodo ?? null, mensaje: $json.mensaje, url: $json.url ?? null }) }}",
+        "options": {
+          "timeout": 60000
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "1ef772c8-4018-462b-87e3-3c8e5efebb96",
+      "name": "Registrar en auditoría",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        170
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Primer error: avisa de inmediato. Los siguientes se acumulan y salen juntos\n// con el primer error posterior a la ventana de 15 minutos.\nconst e = $('Preparar registro').first().json;\nconst sd = $getWorkflowStaticData('global');\nsd.pendientes = sd.pendientes || [];\nsd.pendientes.push({ flujo: e.flujo, nodo: e.nodo, mensaje: e.mensaje, ejecucion: e.ejecucion, url: e.url, hora: e.hora });\nif (sd.pendientes.length > 50) sd.pendientes = sd.pendientes.slice(-50);\nconst ahora = Date.now();\nif (!sd.ultimo_aviso || ahora - sd.ultimo_aviso > 15 * 60 * 1000) {\n  const lote = sd.pendientes;\n  sd.pendientes = [];\n  sd.ultimo_aviso = ahora;\n  return [{ json: { avisar: true, lote } }];\n}\nreturn [{ json: { avisar: false, lote: [] } }];\n"
+      },
+      "id": "39cd526a-103f-4838-95c2-9ad3dc3a859f",
+      "name": "Agrupar avisos (máx. 1 cada 15 min)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        170
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fd6b72e4-2709-41e6-a88b-1c6d6b1886f8",
+              "leftValue": "={{ $json.avisar }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b65dc6b7-07bb-44e5-a828-c3c7965b4c5b",
+      "name": "¿Avisar ahora?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1040,
+        170
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "parametro",
+        "returnAll": false,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "clave",
+              "condition": "eq",
+              "keyValue": "buzon_archivo_central"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "id": "c1b5d234-5172-448d-a46e-9d11b957a770",
+      "name": "Leer buzón de Archivo Central",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REEMPLAZAR",
+          "name": "Supabase SGD (service_role)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// Cambiar por el correo del equipo técnico:\nconst EQUIPO_TECNICO = 'REEMPLAZAR@uniautonoma.edu.co';\nconst lote = $('Agrupar avisos (máx. 1 cada 15 min)').first().json.lote;\nconst b = $input.first().json.valor;\nconst buzon = (typeof b === 'string' ? b : '').replace(/^\"+|\"+$/g, '').trim();\nconst destinos = [buzon, EQUIPO_TECNICO].filter(Boolean).join(',');\nconst lineas = lote.map(x => `• ${x.hora} · ${x.flujo} · nodo: ${x.nodo || '?'}\\n  ${x.mensaje}\\n  ${x.url || ''}`).join('\\n\\n');\nreturn [{ json: {\n  to: destinos,\n  asunto: `[SGD] Error en flujos n8n (${lote.length})`,\n  cuerpo: `Se registraron ${lote.length} error(es) en los flujos de la Bandeja de comunicaciones:\\n\\n${lineas}\\n\\nQuedaron en la auditoría (error_flujo).`\n} }];\n"
+      },
+      "id": "8ac4ae9d-8118-497d-9a64-b9c7cedc8760",
+      "name": "Armar aviso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.asunto }}",
+        "emailType": "text",
+        "message": "={{ $json.cuerpo }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "SGD · Alertas"
+        }
+      },
+      "id": "8b4f2710-4ad2-4374-88d7-8e8b2e951693",
+      "name": "Enviar aviso",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1820,
+        0
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REEMPLAZAR",
+          "name": "Buzón Archivo Central (Gmail)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "content": "## F6 · Errores\nSe asigna como *Error Workflow* en F1–F5 (Settings del flujo).\n\n- Registra en `auditoría` con `fn_auditar('error_flujo', …)`.\n- Avisa por correo agrupado. Este es el único envío fuera de F5: va directo por Gmail para que un fallo de F5 no pueda volver a disparar F6 en bucle.\n- Los reintentos inmediatos van en cada nodo; F6 actúa cuando se agotan.",
+        "width": 560,
+        "height": 230,
+        "color": 4
+      },
+      "id": "d721561b-44a5-40a7-875e-c2009aeea1f7",
+      "name": "Nota 8",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -170
+      ]
+    }
+  ],
+  "connections": {
+    "Falla en un flujo": {
+      "main": [
+        [
+          {
+            "node": "Preparar registro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar registro": {
+      "main": [
+        [
+          {
+            "node": "Registrar en auditoría",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar en auditoría": {
+      "main": [
+        [
+          {
+            "node": "Agrupar avisos (máx. 1 cada 15 min)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agrupar avisos (máx. 1 cada 15 min)": {
+      "main": [
+        [
+          {
+            "node": "¿Avisar ahora?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Avisar ahora?": {
+      "main": [
+        [
+          {
+            "node": "Leer buzón de Archivo Central",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer buzón de Archivo Central": {
+      "main": [
+        [
+          {
+            "node": "Armar aviso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar aviso": {
+      "main": [
+        [
+          {
+            "node": "Enviar aviso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Bogota"
+  },
+  "pinData": {},
+  "tags": []
+}

@@ -1,0 +1,1028 @@
+{
+  "name": "F1 · Correo entrante (v4 tools)",
+  "nodes": [
+    {
+      "id": "trigger-v4",
+      "name": "Cada 3 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "leer-v4",
+      "name": "Leer no leídos",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        260,
+        300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 25,
+        "simple": true,
+        "filters": {
+          "readStatus": "unread",
+          "labelIds": [
+            "INBOX"
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REEMPLAZAR",
+          "name": "Buzón Archivo Central (Gmail)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "split-v4",
+      "name": "Un correo a la vez",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        520,
+        300
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "obtener-v4",
+      "name": "Obtener correo completo",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        780,
+        300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "get",
+        "messageId": "={{ $json.id }}",
+        "simple": false,
+        "options": {
+          "downloadAttachments": true,
+          "dataPropertyAttachmentsPrefixName": "attachment_"
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REEMPLAZAR",
+          "name": "Buzón Archivo Central (Gmail)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "normalizar-v4",
+      "name": "Normalizar correo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst it = $input.first();\nconst m = it.json;\nconst h = {};\nif (m.headers && typeof m.headers === 'object' && !Array.isArray(m.headers)) {\n  for (const [k, v] of Object.entries(m.headers)) h[k.toLowerCase()] = typeof v === 'string' ? v : (v && v.text) || JSON.stringify(v);\n}\nif (Array.isArray(m.payload?.headers)) for (const x of m.payload.headers) h[String(x.name).toLowerCase()] = x.value;\nconst gmail_id = m.id || $('Un correo a la vez').first().json.id;\nconst fromV = m.from?.value?.[0] || {};\nconst fromTxt = String(m.from?.text || (typeof m.from === 'string' ? m.from : '') || '');\nconst de_correo = String(fromV.address || (fromTxt.match(/<([^>]+)>/) || [])[1] || fromTxt).trim().toLowerCase();\nconst de_nombre = (fromV.name || '').trim() || null;\nconst asunto = String(m.subject || '(sin asunto)').replace(/\\s+/g, ' ').trim();\nlet cuerpo = String(m.text || '').trim();\nif (!cuerpo && m.html) {\n  cuerpo = String(m.html)\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, '').replace(/<script[\\s\\S]*?<\\/script>/gi, '')\n    .replace(/<br\\s*\\/?>/gi, '\\n').replace(/<\\/(p|div|tr|li)>/gi, '\\n').replace(/<[^>]+>/g, '')\n    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"')\n    .replace(/\\n{3,}/g, '\\n\\n').trim();\n}\nconst message_id = String(m.messageId || h['message-id'] || `<gmail-${gmail_id}@sin-message-id>`).trim();\nconst in_reply_to = String(m.inReplyTo || h['in-reply-to'] || '').trim() || null;\nconst refsRaw = m.references || h['references'] || '';\nconst references = (Array.isArray(refsRaw) ? refsRaw : String(refsRaw).split(/\\s+/)).filter(Boolean);\nconst fecha = new Date(m.date || Date.now());\nconst recibido_en = (isNaN(fecha) ? new Date() : fecha).toISOString();\nconst ids_citados = [...new Set([in_reply_to, ...references].filter(Boolean))];\nconst tiene_etiqueta = /\\[SGD\\s/i.test(asunto);\nconst attachmentKeys = Object.keys(it.binary || {}).filter(k => k.startsWith('attachment_'));\nreturn [{ json: { gmail_id, message_id, in_reply_to, references, ids_citados, de_nombre, de_correo, asunto, cuerpo: cuerpo.slice(0, 15000), recibido_en, tiene_etiqueta, tiene_adjuntos: attachmentKeys.length > 0, adjuntos_binarios: attachmentKeys } }];\n"
+      }
+    },
+    {
+      "id": "agente-v4",
+      "name": "Agente clasificador (tools)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1300,
+        300
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ 'CORREO A CLASIFICAR\\nDe: ' + $json.de_nombre + ' <' + $json.de_correo + '>\\nAsunto: ' + $json.asunto + '\\nCuerpo:\\n' + String($json.cuerpo || '').slice(0, 4000) + '\\n\\nMETADATOS\\nMessage-ID: ' + $json.message_id + '\\nIn-Reply-To: ' + ($json.in_reply_to || 'ninguno') + '\\nReferences: ' + ($json.references || []).join(', ') + '\\n¿Tiene etiqueta [SGD]?: ' + ($json.tiene_etiqueta ? 'SÍ' : 'NO') + '\\n¿Tiene adjuntos?: ' + ($json.tiene_adjuntos ? 'SÍ' : 'NO') }}",
+        "options": {
+          "systemMessage": "Eres un clasificador experto de correspondencia para el Archivo Central de una universidad. Tu trabajo es decidir qué tipo de correo acaba de llegar. Tienes herramientas para consultar el backend SGD cuando lo necesites. REGLAS: 1) Primero consulta si el Message-ID ya fue procesado; si ya existe o es propio, clasifica como spam. 2) Si el asunto/cuerpo indican rebote (delivery failure, undeliverable, bounce), clasifica como rebote. 3) Si el asunto empieza con Re:/RV:/FW:, tiene In-Reply-To, etiqueta [SGD ...] o el remitente es una dependencia, es respuesta_dependencia. Busca la comunicación por consecutivo o remitente para obtener comunicacion_id. 4) Si es remitente externo/estudiante sin vínculo, es correo_nuevo. 5) Si parece respuesta pero no se puede vincular, es sin_asociar. 6) Publicidad/newsletters/spam → spam. Responde ÚNICAMENTE con JSON: {\"tipo\": \"respuesta_dependencia\"|\"correo_nuevo\"|\"sin_asociar\"|\"spam\"|\"rebote\", \"comunicacion_id\": <número o null>, \"dependencia_id\": <número o null>, \"motivo\": \"<una frase>\"}.",
+          "maxIterations": 5
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "modelo-claude-v4",
+      "name": "Modelo Claude",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        1300,
+        560
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "claude-sonnet-5-5"
+        },
+        "options": {
+          "temperature": 0,
+          "maxTokensToSample": 500
+        }
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "REEMPLAZAR",
+          "name": "Anthropic (Claude)"
+        }
+      }
+    },
+    {
+      "id": "tool-estado-v4",
+      "name": "Tool: consultar estado message-id",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/correos/estado",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "contentType": "application/json",
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message_id",
+              "value": "={{ $fromAI('message_id','','string') }}"
+            },
+            {
+              "name": "asunto",
+              "value": "={{ $fromAI('asunto','','string') }}"
+            },
+            {
+              "name": "in_reply_to",
+              "value": "={{ $fromAI('in_reply_to',null,'string') }}"
+            },
+            {
+              "name": "de_correo",
+              "value": "={{ $fromAI('de_correo','','string') }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      }
+    },
+    {
+      "id": "tool-dep-v4",
+      "name": "Tool: buscar dependencia por correo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        150
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/dependencias/buscar",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "contentType": "application/json",
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "correo",
+              "value": "={{ $fromAI('correo','','string') }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      }
+    },
+    {
+      "id": "tool-consecutivo-v4",
+      "name": "Tool: buscar comunicación por consecutivo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/comunicaciones/buscar",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "contentType": "application/json",
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "consecutivo",
+              "value": "={{ $fromAI('consecutivo','','string') }}"
+            },
+            {
+              "name": "limite",
+              "value": "3"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      }
+    },
+    {
+      "id": "tool-coms-v4",
+      "name": "Tool: buscar comunicaciones por remitente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        450
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/comunicaciones/buscar",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "contentType": "application/json",
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "remitente_correo",
+              "value": "={{ $fromAI('remitente_correo','','string') }}"
+            },
+            {
+              "name": "limite",
+              "value": "3"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      }
+    },
+    {
+      "id": "merge-clasif-v4",
+      "name": "Unir clasificación",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1820,
+        300
+      ],
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "position",
+        "options": {
+          "includeAnyUnpairedItems": true
+        }
+      }
+    },
+    {
+      "id": "parsear-v4",
+      "name": "Parsear clasificación",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst it = $input.first().json;\nconst n = it;\nconst crudo = String(it.output || '').replace(/```json|```/g, '').trim();\nlet tipo = 'correo_nuevo';\nlet comunicacion_id = null;\nlet dependencia_id = null;\nlet motivo = 'Clasificación por agente con tools';\ntry {\n  const j = JSON.parse(crudo.slice(crudo.indexOf('{'), crudo.lastIndexOf('}') + 1));\n  tipo = j.tipo || tipo;\n  comunicacion_id = j.comunicacion_id ?? comunicacion_id;\n  dependencia_id = j.dependencia_id ?? dependencia_id;\n  motivo = j.motivo || motivo;\n} catch (e) {\n  if (/delivery failure|undeliverable|bounce|no such user/i.test(n.asunto + ' ' + n.cuerpo)) tipo = 'rebote';\n  else if (/unsubscribe|newsletter|promoción|oferta|publicidad/i.test(n.asunto + ' ' + n.cuerpo)) tipo = 'spam';\n  motivo = 'Fallback por error en respuesta del agente';\n}\nreturn [{ json: { ...n, tipo, comunicacion_id, dependencia_id, motivo } }];\n"
+      }
+    },
+    {
+      "id": "if-adjuntos-v4",
+      "name": "¿Subir adjuntos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2340,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "tiene-adjuntos",
+              "leftValue": "={{ $json.tiene_adjuntos }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "no-spam",
+              "leftValue": "={{ $json.tipo }}",
+              "rightValue": "spam",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            },
+            {
+              "id": "no-rebote",
+              "leftValue": "={{ $json.tipo }}",
+              "rightValue": "rebote",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "sin-adjuntos-v4",
+      "name": "Sin adjuntos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2580,
+        180
+      ],
+      "parameters": {
+        "jsCode": "const n = $input.first().json; return [{ json: { ...n, archivo_ids: [], adjuntos_omitidos: [] } }];"
+      }
+    },
+    {
+      "id": "preparar-adjuntos-v4",
+      "name": "Preparar adjuntos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2580,
+        420
+      ],
+      "parameters": {
+        "jsCode": "\nconst n = $input.first().json;\nconst keys = n.adjuntos_binarios || [];\nif (!keys.length) return [];\nreturn keys.map(k => ({ json: { binary_key: k, origen: n } }));\n"
+      }
+    },
+    {
+      "id": "subir-adjunto-v4",
+      "name": "Subir adjunto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2820,
+        420
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/archivos",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "archivo",
+              "parameterType": "formBinaryData",
+              "inputDataFieldName": "={{ $json.binary_key }}"
+            },
+            {
+              "name": "categoria",
+              "value": "comunicacion"
+            },
+            {
+              "name": "contexto",
+              "value": "={{ JSON.stringify({ fuente: 'n8n', correo_id: $json.origen.message_id }) }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "colectar-archivos-v4",
+      "name": "Colectar archivo_ids",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3060,
+        420
+      ],
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\nconst origen = items[0]?.json.origen || {};\nconst archivo_ids = items.map(i => i.json.id).filter(Boolean);\nconst adjuntos_omitidos = items.filter(i => !i.json.id).map(i => ({ nombre: i.json.binary_key, motivo: 'Error al subir adjunto' }));\nreturn [{ json: { ...origen, archivo_ids, adjuntos_omitidos } }];\n"
+      }
+    },
+    {
+      "id": "switch-v4",
+      "name": "Ruta según tipo",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        3320,
+        300
+      ],
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "value": "respuesta_dependencia",
+              "output": 0
+            },
+            {
+              "value": "correo_nuevo",
+              "output": 1
+            },
+            {
+              "value": "sin_asociar",
+              "output": 2
+            },
+            {
+              "value": "rebote",
+              "output": 3
+            },
+            {
+              "value": "spam",
+              "output": 4
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "respuesta-dep-v4",
+      "name": "Registrar respuesta dependencia",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3580,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/correos/respuesta-dependencia",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ comunicacion_id: $json.comunicacion_id, de_correo: $json.de_correo, asunto: $json.asunto, cuerpo: $json.cuerpo, message_id: $json.message_id, recibido_en: $json.recibido_en, archivo_ids: $json.archivo_ids || [], adjuntos_omitidos: $json.adjuntos_omitidos || [] }) }}",
+        "options": {
+          "timeout": 60000
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "nuevo-v4",
+      "name": "Registrar correo nuevo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3580,
+        150
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/correos/nuevo",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message_id: $json.message_id, de_nombre: $json.de_nombre, de_correo: $json.de_correo, asunto: $json.asunto, cuerpo: $json.cuerpo, recibido_en: $json.recibido_en, in_reply_to: $json.in_reply_to, archivo_ids: $json.archivo_ids || [], adjuntos_omitidos: $json.adjuntos_omitidos || [] }) }}",
+        "options": {
+          "timeout": 60000
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "sin-asociar-v4",
+      "name": "Guardar sin asociar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3580,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/correos/sin-asociar",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message_id: $json.message_id, in_reply_to: $json.in_reply_to, de_nombre: $json.de_nombre, de_correo: $json.de_correo, asunto: $json.asunto, cuerpo: $json.cuerpo, recibido_en: $json.recibido_en, motivo: $json.motivo, posible_comunicacion_id: $json.comunicacion_id, adjuntos: $json.archivo_ids || [] }) }}",
+        "options": {
+          "timeout": 60000
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "rebote-v4",
+      "name": "Registrar rebote",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3580,
+        450
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/correos/rebote",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ids: $json.ids_citados, de: $json.de_correo, asunto: $json.asunto }) }}",
+        "options": {
+          "timeout": 60000
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "spam-v4",
+      "name": "Marcar spam",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3580,
+        600
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { ok: true, accion: 'marcar_leido' } }];"
+      }
+    },
+    {
+      "id": "marcar-leido-v4",
+      "name": "Marcar como leído",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        3840,
+        300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "markAsRead",
+        "messageId": "={{ $('Normalizar correo').first().json.gmail_id }}"
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REEMPLAZAR",
+          "name": "Buzón Archivo Central (Gmail)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "notas-v4",
+      "name": "Notas",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        80
+      ],
+      "parameters": {
+        "width": 720,
+        "height": 260,
+        "content": "## F1 v4 · Correo entrante con Agent de IA + tools\\n1. Lee no leídos de Gmail.\\n2. Normaliza el correo.\\n3. Un Agent de Claude recibe el correo y decide qué herramientas llamar.\\n4. Tools (HTTP Request) consultan el backend SGD: estado del Message-ID, dependencia por correo, comunicación por consecutivo, comunicaciones por remitente.\\n5. El agente devuelve JSON de clasificación.\\n6. Se unen datos originales + clasificación, se parsea.\\n7. Si aplica, sube cada adjunto a POST /api/archivos y colecta archivo_ids.\\n8. Ejecuta la ruta correspondiente y marca como leído.\\n\\nCredenciales: Gmail, Backend SGD (Header Auth), Anthropic Claude. Reemplazar BACKEND_URL_AQUI."
+      }
+    }
+  ],
+  "connections": {
+    "Cada 3 minutos": {
+      "main": [
+        [
+          {
+            "node": "Leer no leídos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer no leídos": {
+      "main": [
+        [
+          {
+            "node": "Un correo a la vez",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Un correo a la vez": {
+      "main": [
+        [
+          {
+            "node": "Obtener correo completo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener correo completo": {
+      "main": [
+        [
+          {
+            "node": "Normalizar correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar correo": {
+      "main": [
+        [
+          {
+            "node": "Agente clasificador (tools)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unir clasificación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente clasificador (tools)": {
+      "main": [
+        [
+          {
+            "node": "Unir clasificación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Modelo Claude": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente clasificador (tools)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: consultar estado message-id": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agente clasificador (tools)",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: buscar dependencia por correo": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agente clasificador (tools)",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: buscar comunicación por consecutivo": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agente clasificador (tools)",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: buscar comunicaciones por remitente": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agente clasificador (tools)",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unir clasificación": {
+      "main": [
+        [
+          {
+            "node": "Parsear clasificación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear clasificación": {
+      "main": [
+        [
+          {
+            "node": "¿Subir adjuntos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Subir adjuntos?": {
+      "main": [
+        [
+          {
+            "node": "Sin adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sin adjuntos": {
+      "main": [
+        [
+          {
+            "node": "Ruta según tipo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar adjuntos": {
+      "main": [
+        [
+          {
+            "node": "Subir adjunto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Subir adjunto": {
+      "main": [
+        [
+          {
+            "node": "Colectar archivo_ids",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Colectar archivo_ids": {
+      "main": [
+        [
+          {
+            "node": "Ruta según tipo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ruta según tipo": {
+      "main": [
+        [
+          {
+            "node": "Registrar respuesta dependencia",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar correo nuevo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Guardar sin asociar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar rebote",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marcar spam",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar respuesta dependencia": {
+      "main": [
+        [
+          {
+            "node": "Marcar como leído",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar correo nuevo": {
+      "main": [
+        [
+          {
+            "node": "Marcar como leído",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar sin asociar": {
+      "main": [
+        [
+          {
+            "node": "Marcar como leído",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar rebote": {
+      "main": [
+        [
+          {
+            "node": "Marcar como leído",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar spam": {
+      "main": [
+        [
+          {
+            "node": "Marcar como leído",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

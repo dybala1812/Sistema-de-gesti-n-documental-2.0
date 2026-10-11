@@ -1,0 +1,291 @@
+{
+  "name": "F4 · Recordatorios y correos adicionales (manual)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "bandeja/recordatorio",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "09edf1c9-b190-4d52-bb1c-df659d1e86b0",
+      "name": "Recibir solicitud manual",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 240],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Webhook Bandeja (Header Auth)"
+        }
+      },
+      "webhookId": "f4-manual-recordatorio"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst b = $input.first().json.body || {};\nconst num = (v) => (v !== null && v !== undefined && v !== '' && Number.isInteger(Number(v)) && Number(v) > 0) ? Number(v) : null;\nconst correo = /^[^\\s@<>,;]+@[^\\s@<>,;]+\\.[^\\s@<>,;]+$/;\nconst errores = [];\nconst comunicacion_id = num(b.comunicacion_id);\nconst usuario_id = num(b.usuario_id);\nif (!comunicacion_id) errores.push('comunicacion_id es obligatorio');\nif (!usuario_id) errores.push('usuario_id es obligatorio');\nif (!b.modo || !['recordatorio', 'adicional'].includes(b.modo)) errores.push(\"modo debe ser 'recordatorio' o 'adicional'\");\nif (!correo.test(String(b.destinatario_correo || ''))) errores.push('destinatario_correo es inválido');\nconst asunto = String(b.asunto || '').replace(/\\s+/g, ' ').trim();\nif (!asunto) errores.push('asunto es obligatorio');\nconst cuerpo = String(b.cuerpo || '').trim();\nif (!cuerpo) errores.push('cuerpo es obligatorio');\nif (b.adjuntos_ids !== undefined && b.adjuntos_ids !== null) {\n  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\n  if (!Array.isArray(b.adjuntos_ids) || b.adjuntos_ids.some(x => !uuid.test(String(x)))) errores.push('adjuntos_ids debe ser una lista de uuid');\n}\nif (b.modo === 'adicional') {\n  if (!b.destinatario_tipo || !['remitente', 'dependencia'].includes(b.destinatario_tipo)) {\n    errores.push(\"destinatario_tipo debe ser 'remitente' o 'dependencia'\");\n  }\n}\nif (errores.length) return [{ json: { ok: false, http: 400, error: 'solicitud_invalida', detalle: errores } }];\nreturn [{ json: { ok: true, ...b, comunicacion_id, usuario_id, asunto, cuerpo } }];\n"
+      },
+      "id": "c493d891-3905-4ad8-a7dc-984746c94470",
+      "name": "Validar solicitud",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 240]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            { "id": "v1", "leftValue": "={{ $json.ok }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ba9b952e-1a77-4fdc-bbb8-046f58414952",
+      "name": "¿Válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [520, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": { "responseCode": "={{ $json.http || 400 }}" }
+      },
+      "id": "e088762c-845d-49c7-86b3-aeddab80628b",
+      "name": "Responder error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [780, 460]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            { "id": "m1", "leftValue": "={{ $json.modo }}", "rightValue": "recordatorio", "operator": { "type": "string", "operation": "equals" } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a9e0b04a-183f-4c66-a551-8024d66ef5ed",
+      "name": "¿Modo recordatorio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [780, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst v = $('Validar solicitud').first().json;\nreturn [{ json: {\n  plantilla: 'recordatorio',\n  destinatario_correo: v.destinatario_correo,\n  consecutivo: v.consecutivo,\n  variables: {\n    nombre: v.destinatario_nombre || v.destinatario_correo,\n    asunto: v.asunto,\n    pendientes: v.cuerpo\n  },\n  archivo_ids: v.adjuntos_ids || [],\n  contexto: { comunicacion_id: v.comunicacion_id, modo: v.modo }\n} }];\n"
+      },
+      "id": "7aba5639-7cee-4756-ad92-ee0ae577d97c",
+      "name": "Preparar recordatorio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 120]
+    },
+    {
+      "parameters": {
+        "workflowId": { "__rl": true, "value": "REEMPLAZAR_ID_F5", "mode": "id" },
+        "mode": "each",
+        "options": { "waitForSubWorkflow": true }
+      },
+      "id": "543375d1-6e3c-4668-af79-b97518e6abc9",
+      "name": "Enviar recordatorio (F5)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1300, 120],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            { "id": "e1", "leftValue": "={{ $json.ok === true }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2ba3fb9b-53c5-405c-b856-af73a04c2444",
+      "name": "¿Se envió recordatorio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1560, 120]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/recordatorios/registrar",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ids: [$('Validar solicitud').first().json.comunicacion_id], message_id: $json.message_id }) }}",
+        "options": { "timeout": 60000 },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "befae6df-783f-4090-89e1-956c415bfccb",
+      "name": "Registrar recordatorio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1820, 120],
+      "credentials": {
+        "httpHeaderAuth": { "id": "REEMPLAZAR", "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)" }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, message_id: $('Enviar recordatorio (F5)').first().json.message_id }) }}",
+        "options": {}
+      },
+      "id": "00274f4f-3edf-4733-9361-4c98b169ca0e",
+      "name": "OK recordatorio",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2080, 120]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": { "responseCode": "={{ $json.http || 422 }}" }
+      },
+      "id": "78ab869e-3676-4bfc-9eb8-c90877bf9405",
+      "name": "Error envío recordatorio",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1820, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst v = $('Validar solicitud').first().json;\nreturn [{ json: {\n  plantilla: 'adicional',\n  destinatario_correo: v.destinatario_correo,\n  consecutivo: v.consecutivo,\n  variables: {\n    nombre: v.destinatario_nombre || v.destinatario_correo,\n    asunto: v.asunto,\n    cuerpo: v.cuerpo\n  },\n  archivo_ids: v.adjuntos_ids || [],\n  contexto: { comunicacion_id: v.comunicacion_id, modo: v.modo, destinatario_tipo: v.destinatario_tipo }\n} }];\n"
+      },
+      "id": "500e64d8-32a6-4117-ab26-454313cdcb56",
+      "name": "Preparar adicional",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 360]
+    },
+    {
+      "parameters": {
+        "workflowId": { "__rl": true, "value": "REEMPLAZAR_ID_F5", "mode": "id" },
+        "mode": "each",
+        "options": { "waitForSubWorkflow": true }
+      },
+      "id": "d07da6c6-2396-4106-8e58-e42e086c0877",
+      "name": "Enviar adicional (F5)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1300, 360],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            { "id": "e2", "leftValue": "={{ $json.ok === true }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c1e1fdea-624f-43ac-8a1f-be827c6b6ee7",
+      "name": "¿Se envió adicional?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1560, 360]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/correos/adicional",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  usuario: $('Validar solicitud').first().json.usuario_id,\n  comunicacion_id: $('Validar solicitud').first().json.comunicacion_id,\n  destinatario_tipo: $('Validar solicitud').first().json.destinatario_tipo,\n  destinatario_correo: $('Validar solicitud').first().json.destinatario_correo,\n  asunto: $('Validar solicitud').first().json.asunto,\n  cuerpo: $('Validar solicitud').first().json.cuerpo,\n  archivos: $('Validar solicitud').first().json.adjuntos_ids || [],\n  message_id: $json.message_id\n}) }}",
+        "options": { "timeout": 60000 },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "25109cfd-eeb0-4be3-9807-c1d31983d517",
+      "name": "Registrar correo adicional",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1820, 360],
+      "credentials": {
+        "httpHeaderAuth": { "id": "REEMPLAZAR", "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)" }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, message_id: $('Enviar adicional (F5)').first().json.message_id }) }}",
+        "options": {}
+      },
+      "id": "f9daa40e-36e3-4998-bd94-0bb4f079553a",
+      "name": "OK adicional",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2080, 360]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": { "responseCode": "={{ $json.http || 422 }}" }
+      },
+      "id": "4d65d72f-6dd0-4efa-8f15-7061d84d39dd",
+      "name": "Error envío adicional",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1820, 540]
+    }
+  ],
+  "connections": {
+    "Recibir solicitud manual": { "main": [[{ "node": "Validar solicitud", "type": "main", "index": 0 }]] },
+    "Validar solicitud": { "main": [[{ "node": "¿Válida?", "type": "main", "index": 0 }]] },
+    "¿Válida?": {
+      "main": [
+        [{ "node": "¿Modo recordatorio?", "type": "main", "index": 0 }],
+        [{ "node": "Responder error", "type": "main", "index": 0 }]
+      ]
+    },
+    "¿Modo recordatorio?": {
+      "main": [
+        [{ "node": "Preparar recordatorio", "type": "main", "index": 0 }],
+        [{ "node": "Preparar adicional", "type": "main", "index": 0 }]
+      ]
+    },
+    "Preparar recordatorio": { "main": [[{ "node": "Enviar recordatorio (F5)", "type": "main", "index": 0 }]] },
+    "Enviar recordatorio (F5)": { "main": [[{ "node": "¿Se envió recordatorio?", "type": "main", "index": 0 }]] },
+    "¿Se envió recordatorio?": {
+      "main": [
+        [{ "node": "Registrar recordatorio", "type": "main", "index": 0 }],
+        [{ "node": "Error envío recordatorio", "type": "main", "index": 0 }]
+      ]
+    },
+    "Registrar recordatorio": { "main": [[{ "node": "OK recordatorio", "type": "main", "index": 0 }]] },
+    "Preparar adicional": { "main": [[{ "node": "Enviar adicional (F5)", "type": "main", "index": 0 }]] },
+    "Enviar adicional (F5)": { "main": [[{ "node": "¿Se envió adicional?", "type": "main", "index": 0 }]] },
+    "¿Se envió adicional?": {
+      "main": [
+        [{ "node": "Registrar correo adicional", "type": "main", "index": 0 }],
+        [{ "node": "Error envío adicional", "type": "main", "index": 0 }]
+      ]
+    },
+    "Registrar correo adicional": { "main": [[{ "node": "OK adicional", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": []
+}

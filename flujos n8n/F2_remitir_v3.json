@@ -1,0 +1,827 @@
+{
+  "name": "SGD - F2 · Remitir y devolver (v3)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "archivo-central/remitir",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-remitir-v3",
+      "name": "Webhook remitir v3",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Header Auth SGD"
+        }
+      },
+      "webhookId": "sgd-f2-v3-remitir"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst b = $input.first().json.body || {};\nconst num = (v) => (v !== null && v !== undefined && v !== '' && Number.isInteger(Number(v)) && Number(v) > 0) ? Number(v) : null;\nconst modo = b.modo === 'devolver' ? 'devolver' : 'remitir';\nconst errores = [];\nconst comunicacion_id = num(b.comunicacion_id);\nif (!comunicacion_id) errores.push('comunicacion_id es obligatorio');\nconst dependencia_id = num(b.dependencia_id);\nif (modo === 'remitir' && !dependencia_id) errores.push('dependencia_id es obligatorio al remitir');\nconst usuario_id = num(b.usuario_id) || num(b.usuario);\nif (!usuario_id) errores.push('usuario_id es obligatorio para auditoría');\nlet plazo = num(b.plazo_dias_habiles ?? b.plazo_dias);\nif (!plazo || plazo < 1 || plazo > 60) plazo = 5;\nconst adjuntos = Array.isArray(b.adjuntos_ids) ? b.adjuntos_ids.map(String) : (Array.isArray(b.archivo_ids) ? b.archivo_ids.map(String) : []);\nreturn [{ json: { ok: errores.length === 0, errores, modo, comunicacion_id, dependencia_id, usuario_id, plazo_dias_habiles: plazo, mensaje: String(b.mensaje || '').slice(0, 5000), adjuntos_ids: adjuntos } }];\n"
+      },
+      "id": "validar-v3",
+      "name": "Validar solicitud",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "solicitud-valida-v3",
+      "name": "¿Solicitud válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        520,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "responder-400-v3",
+      "name": "Responder 400",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        520,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/n8n/remisiones/leer",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ comunicacion_id: $('Validar solicitud').first().json.comunicacion_id, dependencia_id: $('Validar solicitud').first().json.dependencia_id }) }}",
+        "options": {
+          "timeout": 60000
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "leer-comunicacion-v3",
+      "name": "Leer comunicación y dependencia",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        780,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst s = $('Validar solicitud').first().json;\nconst r = $input.first().json;\nconst fail = (http, error, detalle) => [{ json: { ok: false, http, error, detalle } }];\nif (!r.id) return fail(404, 'comunicacion_no_existe', `No existe la comunicación ${s.comunicacion_id}`);\nif (r.tipo !== 'ENT') return fail(409, 'solo_entradas', 'Solo se remiten/devuelven comunicaciones de entrada.');\nconst esperado = s.modo === 'remitir' ? 'nueva' : 'respondida_dependencia';\nif (r.estado !== esperado) return fail(409, 'estado_no_permite', `La comunicación está en \"${r.estado}\" y debe estar en \"${esperado}\".`);\nif (r.dep_estado !== 'activo') return fail(422, 'dependencia_inactiva', 'La dependencia no está activa.');\nconst correo = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nif (!correo.test(r.correo_oficial || '')) return fail(422, 'dependencia_sin_correo', 'La dependencia no tiene correo oficial.');\nconst plazo = s.plazo_dias_habiles ?? (Number(r.plazo_defecto) || 5);\nreturn [{ json: { ok: true, ...s, consecutivo: r.consecutivo, asunto: r.asunto, cuerpo: r.cuerpo, remitente_nombre: r.remitente_nombre, remitente_correo: r.remitente_correo, dependencia: r.dependencia, correo_oficial: r.correo_oficial, adjuntos: r.adjuntos || [] } }];\n"
+      },
+      "id": "validar-estado-v3",
+      "name": "Validar estado y dependencia",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "se-puede-continuar-v3",
+      "name": "¿Se puede continuar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": "={{ $json.http || 409 }}"
+        }
+      },
+      "id": "responder-error-validacion-v3",
+      "name": "Responder error validación",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1300,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst v = $input.first().json;\nconst remitir = v.modo === 'remitir';\nconst asunto = `[SGD ${v.consecutivo}] ${remitir ? 'Remisión para gestión' : 'Devolución - se requiere complementar'}`;\nconst remitenteHtml = v.remitente_nombre || v.remitente_correo ? `<p><strong>Remitente original:</strong> ${v.remitente_nombre || ''} ${v.remitente_correo ? `(${v.remitente_correo})` : ''}</p>` : '';\nconst cuerpoHtml = v.cuerpo ? `<p><strong>Contenido:</strong></p><blockquote style=\"border-left: 3px solid #ccc; margin: 0; padding-left: 10px;\">${v.cuerpo.replace(/\\n/g, '<br>')}</blockquote>` : '';\nconst html = `<p>Estimada dependencia <strong>${v.dependencia}</strong>:</p>\n<p>En atención a la comunicación <strong>${v.consecutivo}</strong> sobre \"${v.asunto}\", ${remitir ? 'se remite para su gestión.' : 'se devuelve para complementar la respuesta.'}</p>\n${remitenteHtml}\n${cuerpoHtml}\n${v.mensaje ? `<p><strong>Mensaje del gestor:</strong> ${v.mensaje.replace(/\\n/g, '<br>')}</p>` : ''}\n<p>Plazo: ${v.plazo_dias_habiles} días hábiles.</p>\n<p>Cordialmente,<br>Archivo Central</p>`;\nreturn [{ json: { asunto, html, para: v.correo_oficial, consecutivo: v.consecutivo, ...v } }];\n"
+      },
+      "id": "armar-correo-v3",
+      "name": "Armar correo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst envio = $input.first().json;\nif (!envio || !envio.id) return [{ json: { ok: false, http: 502, error: 'gmail_fallo', detalle: 'No se pudo enviar el correo' } }];\nconst hdr = envio.headers && (envio.headers['message-id'] || envio.headers['Message-ID']);\nconst message_id = envio.messageId || hdr || `<sgd-gmail-${envio.id}@sin-message-id>`;\nreturn [{ json: { ok: true, message_id, gmail_id: envio.id || null } }];\n"
+      },
+      "id": "extraer-message-id-v3",
+      "name": "Extraer Message-ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "responder-502-v3",
+      "name": "Responder 502",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1820,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Validar estado y dependencia').first().json.modo }}",
+              "rightValue": "remitir",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "es-remitir-v3",
+      "name": "¿Es remitir?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/n8n/remisiones/remitir",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ usuario: $('Validar solicitud').first().json.usuario_id, comunicacion_id: $('Validar solicitud').first().json.comunicacion_id, dependencia_id: $('Validar solicitud').first().json.dependencia_id, plazo: $('Validar solicitud').first().json.plazo_dias_habiles, message_id: $('Extraer Message-ID').first().json.message_id, mensaje: $('Validar solicitud').first().json.mensaje }) }}",
+        "options": {
+          "timeout": 60000
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "registrar-remision-v3",
+      "name": "Registrar remisión",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2600,
+        150
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/n8n/remisiones/devolver",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ usuario: $('Validar solicitud').first().json.usuario_id, comunicacion_id: $('Validar solicitud').first().json.comunicacion_id, message_id: $('Extraer Message-ID').first().json.message_id, dependencia_id: $('Validar solicitud').first().json.dependencia_id, mensaje: $('Validar solicitud').first().json.mensaje }) }}",
+        "options": {
+          "timeout": 60000
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "registrar-devolucion-v3",
+      "name": "Registrar devolución",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2600,
+        450
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, comunicacion_id: $('Validar solicitud').first().json.comunicacion_id, modo: $('Validar solicitud').first().json.modo, message_id: $('Extraer Message-ID').first().json.message_id } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "responder-200-v3",
+      "name": "Responder 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2860,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "responder-error-registro-v3",
+      "name": "Responder error registro",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2600,
+        650
+      ]
+    },
+    {
+      "parameters": {
+        "width": 720,
+        "height": 240,
+        "content": "## F2 v3 · Remitir / Devolver\n1. Valida la solicitud del frontend.\n2. Lee comunicación + dependencia desde el backend SGD.\n3. Envía el correo por Gmail.\n4. Registra la remisión/devolución en el backend SGD vía API.\n\nNotas:\n- Usa `host.docker.internal:3000` para llegar al backend desde n8n en Docker.\n- Si n8n corre nativo, cambia a `http://localhost:3000/api/n8n/...`.\n- Para adjuntos, descargar de `GET /api/archivos/{id}` antes del nodo Gmail y pasarlos como binary.\n- Credenciales requeridas: Header Auth SGD, Backend SGD (Bearer N8N_SERVICE_TOKEN), Gmail Archivo Central."
+      },
+      "id": "notas-v3",
+      "name": "Notas",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const c = $input.first().json;\nconst adjuntos = c.adjuntos || c.adjuntos_ids || [];\nif (!adjuntos.length) return [{ json: { sin_adjuntos: true } }];\nreturn adjuntos.map((id, i) => ({ json: { archivo_id: id, orden: i } }));"
+      },
+      "id": "preparar-descargas-v3",
+      "name": "Preparar descargas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.sin_adjuntos === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "sin-adjuntos-v3",
+      "name": "¿Sin adjuntos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2080,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://host.docker.internal:3000/api/archivos/' + $json.archivo_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "archivo"
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "id": "descargar-adjunto-v3",
+      "name": "Descargar adjunto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2080,
+        480
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const correo = $('Armar correo').first().json;\nconst binary = {};\nconst nombres = [];\nlet fallidos = [];\n$input.all().forEach(it => {\n  if (it.json && it.json.sin_adjuntos) return;\n  const b = it.binary && it.binary.archivo;\n  if (!b) { fallidos.push(it.json && it.json.archivo_id); return; }\n  const k = `attachment_${nombres.length}`;\n  binary[k] = b;\n  nombres.push(k);\n});\nreturn [{ json: { ...correo, binarios: nombres.join(','), adjuntos_fallidos: fallidos.filter(Boolean) }, binary }];"
+      },
+      "id": "reunir-adjuntos-v3",
+      "name": "Reunir adjuntos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ !!$json.binarios }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "lleva-adjuntos-v3",
+      "name": "¿Lleva adjuntos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.para }}",
+        "subject": "={{ $json.asunto }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "={{ $json.binarios }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "enviar-con-adjuntos-v3",
+      "name": "Enviar con adjuntos",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2860,
+        220
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail Archivo Central"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.para }}",
+        "subject": "={{ $json.asunto }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "enviar-sin-adjuntos-v3",
+      "name": "Enviar sin adjuntos",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2860,
+        380
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail Archivo Central"
+        }
+      },
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "connections": {
+    "Webhook remitir v3": {
+      "main": [
+        [
+          {
+            "node": "Validar solicitud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar solicitud": {
+      "main": [
+        [
+          {
+            "node": "¿Solicitud válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Solicitud válida?": {
+      "main": [
+        [
+          {
+            "node": "Leer comunicación y dependencia",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer comunicación y dependencia": {
+      "main": [
+        [
+          {
+            "node": "Validar estado y dependencia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar estado y dependencia": {
+      "main": [
+        [
+          {
+            "node": "¿Se puede continuar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Se puede continuar?": {
+      "main": [
+        [
+          {
+            "node": "Armar correo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder error validación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar correo": {
+      "main": [
+        [
+          {
+            "node": "Preparar descargas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer Message-ID": {
+      "main": [
+        [
+          {
+            "node": "¿Es remitir?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es remitir?": {
+      "main": [
+        [
+          {
+            "node": "Registrar remisión",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar devolución",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar remisión": {
+      "main": [
+        [
+          {
+            "node": "Responder 200",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder error registro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar devolución": {
+      "main": [
+        [
+          {
+            "node": "Responder 200",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder error registro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar descargas": {
+      "main": [
+        [
+          {
+            "node": "¿Sin adjuntos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Sin adjuntos?": {
+      "main": [
+        [
+          {
+            "node": "Reunir adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Descargar adjunto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar adjunto": {
+      "main": [
+        [
+          {
+            "node": "Reunir adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reunir adjuntos": {
+      "main": [
+        [
+          {
+            "node": "¿Lleva adjuntos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Lleva adjuntos?": {
+      "main": [
+        [
+          {
+            "node": "Enviar con adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enviar sin adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar con adjuntos": {
+      "main": [
+        [
+          {
+            "node": "Extraer Message-ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 502",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar sin adjuntos": {
+      "main": [
+        [
+          {
+            "node": "Extraer Message-ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 502",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

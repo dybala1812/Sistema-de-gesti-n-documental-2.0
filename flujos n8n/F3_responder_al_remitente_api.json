@@ -1,0 +1,600 @@
+{
+  "name": "F3 · Responder al remitente",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "bandeja/responder",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "d4c5fc21-ef6a-422d-9867-48f685e29653",
+      "name": "Botón Enviar respuesta",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        340
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Webhook Bandeja (Header Auth)"
+        }
+      },
+      "webhookId": "e36ac98a-61c1-400d-a018-ec57af68d93e"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst b = $input.first().json.body || {};\nconst num = (v) => (v !== null && v !== undefined && v !== '' && Number.isInteger(Number(v)) && Number(v) > 0) ? Number(v) : null;\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nconst errores = [];\nconst comunicacion_id = num(b.comunicacion_id);\nif (!comunicacion_id) errores.push('comunicacion_id es obligatorio');\nconst usuario_id = num(b.usuario_id);\nif (!usuario_id) errores.push('usuario_id es obligatorio (quién actúa, para la auditoría)');\nconst cuerpo = String(b.cuerpo || '').trim();\nif (!cuerpo) errores.push('cuerpo es obligatorio');\nlet archivo_ids = null;\nif (b.archivo_ids !== undefined && b.archivo_ids !== null) {\n  if (!Array.isArray(b.archivo_ids) || b.archivo_ids.some(x => !uuid.test(String(x)))) errores.push('archivo_ids debe ser una lista de uuid');\n  else archivo_ids = b.archivo_ids.map(String);\n}\nif (errores.length) return [{ json: { ok: false, http: 400, error: 'solicitud_invalida', detalle: errores } }];\nreturn [{ json: { ok: true, comunicacion_id, usuario_id, cuerpo: cuerpo.slice(0, 20000),\n                  asunto: b.asunto ? String(b.asunto).replace(/\\s+/g, ' ').trim().slice(0, 300) : null,\n                  destinatario: b.destinatario ? String(b.destinatario).trim() : null, archivo_ids } }];\n"
+      },
+      "id": "979bdfd9-1db7-4736-a362-b15c079ecaf9",
+      "name": "Validar solicitud",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0e7515e5-af03-4666-9205-e2363448b778",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d6c8b948-1215-4c34-911e-267b853537a4",
+      "name": "¿Solicitud válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        520,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": "={{ $json.http || 200 }}"
+        }
+      },
+      "id": "2bb83e11-1a46-43f4-a640-c566475f9354",
+      "name": "Responder error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3120,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/respuestas/leer-entrada",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ comunicacion_id: $json.comunicacion_id }) }}",
+        "options": {
+          "timeout": 60000
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "93aa65a6-f5bf-4a7c-98f6-a60e12756af9",
+      "name": "Leer comunicación de entrada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        780,
+        170
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst e = $('Validar solicitud').first().json;\nconst r = $input.first().json;\nconst fail = (http, error, detalle) => [{ json: { ok: false, http, error, detalle } }];\nconst correo = /^[^\\s@<>,;]+@[^\\s@<>,;]+\\.[^\\s@<>,;]+$/;\nif (!r.id) return fail(404, 'comunicacion_no_existe', `No existe la comunicación ${e.comunicacion_id}`);\nif (r.tipo !== 'ENT') return fail(409, 'solo_entradas', 'Solo se responde una comunicación de entrada (ENT).');\nif (r.estado !== 'respondida_dependencia') return fail(409, 'estado_no_permite_responder', `La comunicación está en \"${r.estado}\"; debe estar en \"respondida_dependencia\".`);\nif (!correo.test(r.remitente_correo || '')) return fail(422, 'remitente_sin_correo', 'La entrada no tiene un correo de remitente válido.');\nif (e.destinatario && e.destinatario.toLowerCase() !== r.remitente_correo.toLowerCase())\n  return fail(400, 'destinatario_no_coincide', 'La respuesta solo puede ir al remitente de la entrada.');\nconst adj = r.adjuntos || [];\nlet ids;\nif (e.archivo_ids) {\n  const propios = new Set(adj.map(a => a.archivo_id));\n  const ajenos = e.archivo_ids.filter(x => !propios.has(x));\n  if (ajenos.length) return fail(422, 'adjuntos_no_pertenecen', `Estos archivos no son adjuntos de la comunicación: ${ajenos.join(', ')}`);\n  ids = e.archivo_ids;\n} else {\n  ids = adj.filter(a => a.de_dependencia).map(a => a.archivo_id);   // por defecto: los de la respuesta de la dependencia\n}\nconst asunto = e.asunto || (/^\\s*(re|rv)\\s*:/i.test(r.asunto) ? r.asunto : `RE: ${r.asunto}`);\nreturn [{ json: { ok: true, ...e, archivo_ids: ids, asunto, consecutivo_entrada: r.consecutivo,\n                  remitente_nombre: r.remitente_nombre, remitente_correo: r.remitente_correo } }];\n"
+      },
+      "id": "d4cf0f32-17ec-4598-99a2-a95205c08b24",
+      "name": "Validar estado y adjuntos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        170
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "35d240a8-a8b5-404a-bdaf-25efe12590f9",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5ec68642-be49-4078-909c-1a1264bb5fb7",
+      "name": "¿Se puede continuar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1300,
+        170
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// La etiqueta lleva el consecutivo de la ENTRADA: la salida (SAL) aún no existe\n// porque solo se registra si el envío sale bien.\nconst v = $input.first().json;\nreturn [{ json: {\n  plantilla: 'respuesta',\n  destinatario_correo: v.remitente_correo,\n  consecutivo: v.consecutivo_entrada,\n  variables: { nombre: v.remitente_nombre || v.remitente_correo, asunto: v.asunto, respuesta: v.cuerpo },\n  archivo_ids: v.archivo_ids,\n  contexto: { entrada_id: v.comunicacion_id }\n} }];\n"
+      },
+      "id": "aec72bbb-a8a6-4d2e-8114-5aa8aa9b98dc",
+      "name": "Preparar envío",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        170
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_ID_F5",
+          "mode": "id"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "b187cb17-121f-41b4-935c-980dbed76a88",
+      "name": "Enviar correo (F5)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1820,
+        170
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "327de7b1-87f7-4552-9a9b-f385c0159706",
+              "leftValue": "={{ $json.ok === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "63b3af53-bc92-49d4-9f48-9ae36f6aec14",
+      "name": "¿Se envió?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2080,
+        170
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/respuestas/responder",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ usuario: $('Validar estado y adjuntos').first().json.usuario_id, entrada_id: $('Validar estado y adjuntos').first().json.comunicacion_id, asunto: $('Validar estado y adjuntos').first().json.asunto, cuerpo: $('Validar estado y adjuntos').first().json.cuerpo, message_id: $json.message_id, archivos: $('Validar estado y adjuntos').first().json.archivo_ids }) }}",
+        "options": {
+          "timeout": 60000
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "9abe37a0-0c17-4c99-8e75-e1206895325f",
+      "name": "Registrar salida y cerrar entrada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2340,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst v = $('Validar estado y adjuntos').first().json;\nconst envio = $('Enviar correo (F5)').first().json;\nconst s = $input.first().json;\nreturn [{ json: { ok: true, comunicacion_id: v.comunicacion_id, entrada: v.consecutivo_entrada,\n                  salida_id: s.id, salida_consecutivo: s.consecutivo, estado: 'cerrada', message_id: envio.message_id } }];\n"
+      },
+      "id": "c213fcc1-e567-4eda-9b2d-52f4056df886",
+      "name": "Armar respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2600,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": "={{ $json.http || 200 }}"
+        }
+      },
+      "id": "641f1ebd-4786-4719-bf02-050538dfe3b4",
+      "name": "Responder OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2860,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/errores/envio",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ usuario: $('Validar estado y adjuntos').first().json.usuario_id, comunicaciones: [ $('Validar estado y adjuntos').first().json.comunicacion_id ], dependencia: null, detalle: { flujo: 'F3', error: JSON.stringify($('Enviar correo (F5)').first().json.error ?? 'error desconocido').slice(0, 500) } }) }}",
+        "options": {
+          "timeout": 60000
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "3dcc4351-0803-470c-a763-47b1d82a4b0a",
+      "name": "Registrar error de envío",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2340,
+        510
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nreturn [{ json: { ok: false, http: 502, error: 'envio_fallido',\n  detalle: 'El correo no salió. La entrada sigue en \"respondida_dependencia\"; se puede reintentar.' } }];\n"
+      },
+      "id": "f6344f75-4704-4aac-99e1-554218abd4b7",
+      "name": "Armar error de envío",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2600,
+        510
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://BACKEND_URL_AQUI/api/n8n/auditoria",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ flujo: 'F3 Responder', detalle: { comunicacion_id: $('Validar estado y adjuntos').first().json.comunicacion_id, message_id: $('Enviar correo (F5)').first().json.message_id, error: JSON.stringify($json.error ?? 'error desconocido').slice(0, 500) } }) }}",
+        "options": {
+          "timeout": 60000
+        },
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "id": "e51b5635-7c68-44fa-b0b6-622beb1d3c7d",
+      "name": "Auditar fallo de registro",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2600,
+        340
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nreturn [{ json: { ok: false, http: 500, error: 'enviado_pero_no_registrado',\n  detalle: 'El correo SALIÓ, pero no se pudo registrar la salida ni cerrar la entrada. No reenviar: avisar a soporte.',\n  message_id: $('Enviar correo (F5)').first().json.message_id } }];\n"
+      },
+      "id": "58c1b98c-47e4-4de4-a3bc-742a038a6242",
+      "name": "Armar error de registro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## F3 · Responder al remitente\n`POST /webhook/bandeja/responder` (Header Auth)\n\n```\n{ comunicacion_id, usuario_id, cuerpo,\n  asunto?, destinatario?, archivo_ids?[] }\n```\n\nSolo registra (`fn_responder_remitente`) **después** de enviar con éxito. Si el envío falla: evento `error_envio` y el estado no cambia.\nLa etiqueta del asunto usa el consecutivo de la ENTRADA (la SAL todavía no existe).",
+        "width": 600,
+        "height": 260,
+        "color": 4
+      },
+      "id": "24176d68-97bf-47fd-abd8-6b9acac976b7",
+      "name": "Nota 17",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -170
+      ]
+    }
+  ],
+  "connections": {
+    "Botón Enviar respuesta": {
+      "main": [
+        [
+          {
+            "node": "Validar solicitud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar solicitud": {
+      "main": [
+        [
+          {
+            "node": "¿Solicitud válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Solicitud válida?": {
+      "main": [
+        [
+          {
+            "node": "Leer comunicación de entrada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer comunicación de entrada": {
+      "main": [
+        [
+          {
+            "node": "Validar estado y adjuntos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar estado y adjuntos": {
+      "main": [
+        [
+          {
+            "node": "¿Se puede continuar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Se puede continuar?": {
+      "main": [
+        [
+          {
+            "node": "Preparar envío",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar envío": {
+      "main": [
+        [
+          {
+            "node": "Enviar correo (F5)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar correo (F5)": {
+      "main": [
+        [
+          {
+            "node": "¿Se envió?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Se envió?": {
+      "main": [
+        [
+          {
+            "node": "Registrar salida y cerrar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar error de envío",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar salida y cerrar entrada": {
+      "main": [
+        [
+          {
+            "node": "Armar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Auditar fallo de registro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar respuesta": {
+      "main": [
+        [
+          {
+            "node": "Responder OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar error de envío": {
+      "main": [
+        [
+          {
+            "node": "Armar error de envío",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar error de envío": {
+      "main": [
+        [
+          {
+            "node": "Responder error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auditar fallo de registro": {
+      "main": [
+        [
+          {
+            "node": "Armar error de registro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar error de registro": {
+      "main": [
+        [
+          {
+            "node": "Responder error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Bogota"
+  },
+  "pinData": {},
+  "tags": []
+}
