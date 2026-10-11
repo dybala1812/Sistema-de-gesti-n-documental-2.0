@@ -66,3 +66,12 @@ graphify-out/
 
 # ── Archivos subidos por el sistema (adjuntos reales: datos personales, Ley 1581) ──
 archivos_sgd/
+# PDF y Word de la carpeta de archivos del sistema (adjuntos de los correos).
+# También dentro del backend, por si RAIZ_ARCHIVOS apunta a otra carpeta.
+# No afecta ia_contexto/fuentes/, donde están los documentos del proyecto.
+archivos_sgd/**/*.pdf
+archivos_sgd/**/*.doc
+archivos_sgd/**/*.docx
+backned_sistema_gestion_documental/**/*.pdf
+backned_sistema_gestion_documental/**/*.doc
+backned_sistema_gestion_documental/**/*.docx
