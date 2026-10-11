@@ -63,3 +63,6 @@ desktop.ini
 
 # ── graphify ──
 graphify-out/
+
+# ── Archivos subidos por el sistema (adjuntos reales: datos personales, Ley 1581) ──
+archivos_sgd/
