@@ -44,6 +44,15 @@ export async function POST(
     const cuerpo = leer.texto(b, "cuerpo", true);
     const adjuntos = leer.uuids(b, "adjuntos");
 
+    // Se comprueba ANTES de tocar la base de datos: si falta el webhook, el correo no puede salir
+    // y la comunicación no debe quedar marcada como respondida.
+    const url = process.env.N8N_WEBHOOK_RESPONDER_URL;
+    if (!url) {
+      return errorResponse("Falta configurar el webhook de n8n para responder", 503, {
+        detalle: "Defina N8N_WEBHOOK_RESPONDER_URL en el .env.local del backend (URL del webhook de F3: .../webhook/bandeja/responder) y reinicie el backend.",
+      });
+    }
+
     // Prepara la comunicación para que F3 la acepte.
     const { error: rpcError } = await supabase.rpc("fn_responder_directo", {
       p_usuario_id: usuario.id,
@@ -51,18 +60,35 @@ export async function POST(
       p_mensaje: cuerpo,
     });
     if (rpcError) {
-      return errorResponse(rpcError.message, 400, { codigo: rpcError.code });
+      // La función no existe en la base: falta aplicar la migración (no es un error del usuario).
+      if (rpcError.code === "PGRST202") {
+        return errorResponse("Falta aplicar migraciones en Supabase para responder directamente", 500, {
+          detalle: "No existe fn_responder_directo. Ejecute en el SQL Editor 20261011000000_f4_manual_y_correo_adicional.sql y 20261012000000_responder_directo_transicion.sql.",
+          codigo: rpcError.code,
+        });
+      }
+      // Reglas de negocio de la base (RN-AC-xx / RF-AC-xx) → conflicto de estado, no datos inválidos.
+      const esRegla = /(RN|RF)-AC-\d+/.test(rpcError.message) || rpcError.code === "P0001";
+      return errorResponse(rpcError.message, esRegla ? 409 : 400, { codigo: rpcError.code });
     }
 
-    const url = process.env.N8N_WEBHOOK_RESPONDER_URL;
-    const resultado = await dispararWebhookN8N(url, {
-      comunicacion_id: comunicacionId,
-      usuario_id: usuario.id,
-      asunto,
-      cuerpo,
-      destinatario: com.remitente_correo,
-      archivo_ids: adjuntos,
-    });
+    let resultado: unknown;
+    try {
+      resultado = await dispararWebhookN8N(url, {
+        comunicacion_id: comunicacionId,
+        usuario_id: usuario.id,
+        asunto,
+        cuerpo,
+        destinatario: com.remitente_correo,
+        archivo_ids: adjuntos,
+      });
+    } catch (err) {
+      // La comunicación ya quedó lista (respondida_dependencia) pero el correo no salió.
+      // Es seguro reintentar: fn_responder_directo acepta una entrada ya preparada.
+      return errorResponse("n8n no pudo enviar la respuesta. Puede volver a intentarlo.", 502, {
+        detalle: err instanceof Error ? err.message : String(err),
+      });
+    }
 
     return jsonResponse({ ok: true, comunicacion_id: comunicacionId, n8n: resultado });
   } catch (err) {
