@@ -36,6 +36,8 @@ const MIGRACIONES = [
   ["20261007000900_n8n_funciones.sql",              ["rpc:n8n_estado_correo", "rpc:n8n_remitir", "rpc:n8n_responder", "rpc:n8n_registrar_error_envio", "rpc:n8n_resumen_dia"]],
   ["20261010000000_mejorar_feedback_errores_respuesta.sql", ["rpc:fn_responder_remitente", "rpc:n8n_responder"]],
   ["20261011000000_f4_manual_y_correo_adicional.sql", ["rpc:n8n_registrar_correo_adicional", "rpc:fn_responder_directo"]],
+  ["20261014000000_correo_enviado.sql",             ["tabla:correo_enviado", "rpc:n8n_registrar_correo_enviado"]],
+  ["20261012000000_docx_formato_permitido.sql",     ["tabla:parametro"]],
 ];
 
 const res = await fetch(`${URL}/rest/v1/`, { headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, Accept: "application/openapi+json" } });

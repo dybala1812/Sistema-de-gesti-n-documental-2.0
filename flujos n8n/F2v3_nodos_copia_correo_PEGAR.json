@@ -1,0 +1,63 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/api/n8n/correos/enviado",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  message_id: $('Extraer Message-ID').first().json.message_id,\n  para: $('Armar correo').first().json.para,\n  asunto: $('Armar correo').first().json.asunto,\n  cuerpo: String($('Armar correo').first().json.html || '').replace(/<br\\s*\\/?>/gi, '\\n').replace(/<\\/(p|blockquote|div)>/gi, '\\n\\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '\"').replace(/\\n{3,}/g, '\\n\\n').trim(),\n  plantilla: $('Validar solicitud').first().json.modo === 'remitir' ? 'remision' : 'devolucion',\n  comunicacion_id: Number($('Validar solicitud').first().json.comunicacion_id) || null,\n  consecutivos: [$('Armar correo').first().json.consecutivo].filter(Boolean),\n  archivo_ids: [].concat($('Validar solicitud').first().json.adjuntos_ids || $('Validar solicitud').first().json.archivo_ids || []).filter(a => /^[0-9a-f-]{36}$/i.test(String(a))),\n  enviado_en: new Date().toISOString()\n}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "34a531a4-8418-4322-93d9-cf646a6ee7c5",
+      "name": "Guardar copia del correo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        10012,
+        2820
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "pH2gWHGVFBKWdDIJ",
+          "name": "Header Auth account 3"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
+      "notes": "El correo YA salió: si guardar la copia falla, el flujo sigue y registra la remisión."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Sigue con el registro usando la salida de «Extraer Message-ID» (no la respuesta de la copia).\nreturn $('Extraer Message-ID').all();\n"
+      },
+      "id": "fd5f57d5-4c3e-4005-bc95-ad01d6cfcc77",
+      "name": "Seguir con el registro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        10232,
+        2820
+      ]
+    }
+  ],
+  "connections": {
+    "Guardar copia del correo": {
+      "main": [
+        [
+          {
+            "node": "Seguir con el registro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

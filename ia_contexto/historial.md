@@ -10,6 +10,43 @@ Seguridad: secretos, validaciones, permisos revisados
 Commit: hash o "ninguno"
 -->
 
+## 2026-10-12 — fix | Se perdía el texto cuando la dependencia respondía más de una vez
+Cambio: n8n_registrar_respuesta_dependencia (migración 09) ponía cada respuesta sobre el último evento «respuesta_dependencia»; con una segunda respuesta (otro correo de la dependencia) el estado ya no cambiaba, no se creaba evento, el adjunto se colgaba del primero y el texto se perdía (caso real: ENT-2026-000029, evento 95 con 2 adjuntos y un solo texto). Migración 15: cada correo de respuesta es su propio evento (con estado_anterior = estado_nuevo y detalle.respuesta_adicional = true si ya estaba respondida), con su remitente, texto y adjuntos; idempotente por Message-ID. No cambia el contrato del backend ni de n8n.
+Tests: probar_local.sh pasa con las 17 migraciones (5 pruebas nuevas; las existentes de respuesta/devolución siguen pasando).
+Pendiente: aplicar la migración 15 en Supabase. El texto del segundo correo de ENT-2026-000029 no está en la base (sí en la ejecución #20079 de F1 en n8n).
+Commit: ninguno.
+
+## 2026-10-12 — feature | Correo adicional a cualquier dependencia
+Cambio: el diálogo «Correo adicional» permite elegir el remitente, la dependencia asignada u otra dependencia activa (las que no tienen correo oficial aparecen deshabilitadas). Backend (correo-adicional/route.ts): acepta dependencia_id opcional; valida que exista, esté activa y tenga correo; error claro si la comunicación no tiene dependencia ni remitente con correo. Contrato con F4 y la base sin cambios (destinatario_tipo sigue siendo 'remitente' | 'dependencia').
+Tests: tsc sin errores en archivos propios; validaciones probadas en el backend real (dependencia inexistente y tipo inválido → 400, sin llegar a n8n); diálogo revisado en el navegador sin enviar.
+Commit: ninguno.
+
+## 2026-10-12 — feature | Ver el correo de cada paso del historial de una comunicación
+Cambio: en el detalle, los pasos del historial que envían o reciben correo (recepción, acuse, remisión, respuesta de la dependencia, devolución, recordatorio, respuesta al remitente, correo adicional) se pueden abrir: el correo (De, Para, Fecha, Asunto, cuerpo) y sus adjuntos se muestran en la columna izquierda, en lugar del correo original, con botón «Ver correo original». Base: migración 14 (tabla correo_enviado, inmutable, + n8n_registrar_correo_enviado, idempotente por Message-ID). Backend: POST /api/n8n/correos/enviado (F5 guarda la copia) y GET /api/comunicaciones/{id}/eventos/{eventoId}/correo (usa la copia y, si no hay, lo que ya guardaba la base). F5: nodos «Guardar copia del correo» (On Error → Continue) y «Devolver resultado» en flujos n8n/F5_envio_de_correo (1).json y F5_nodos_copia_correo_PEGAR.json. Frontend: lib/correosEventoApi.ts y DetalleComunicacion.tsx.
+Tests: probar_local.sh pasa con las 16 migraciones (6 pruebas nuevas); tsc sin errores en backend y en los archivos propios del frontend; probado en el navegador con ENT-2026-000019 (respuesta de dependencia con adjunto, respuesta al remitente, remisión antigua sin copia → aviso).
+Pendiente: aplicar la migración 14 en Supabase y agregar los 2 nodos a F5 en n8n. Los correos enviados antes de eso solo muestran lo que ya estaba guardado.
+Commit: ninguno.
+
+## 2026-10-12 — fix | El token de pruebas del backend usaba un usuario inventado (id 1)
+Cambio: lib/auth.ts tenía dos caminos para SGD_DEV_TOKEN; el primero (usuarioDesarrollo) devolvía id 1 sin consultar la base, así que "Responder directo" y demás acciones mandaban usuario 1 a Supabase y a n8n. Se quitó: el token de pruebas pasa por validarTokenNOVA y se sincroniza como el usuario 2 (dev@localhost).
+Tests: tsc sin errores; consulta de solo lectura confirma dev@localhost = usuario 2 (archivo_central).
+Commit: ninguno.
+
+## 2026-10-12 — fix | FK comunicacion_evento_usuario_id_fkey al responder/remitir desde n8n
+Causa: el flujo (o una prueba manual del webhook) manda un usuario_id que no existe en `usuario` (en el Supabase real solo existe el usuario de pruebas id=2; la prueba mandaba usuario 1). El INSERT del evento fallaba con la FK sin indicar qué usuario.
+Cambio: migración 20261013000000_validar_usuario_actual.sql — fn_set_usuario_actual valida que el usuario exista y lanza «[campo:usuario|tipo:existente] El usuario N no existe…» (22023 → 400 claro en el backend); null sigue permitido. Cubre todas las funciones n8n_* y *_usuario.
+Tests: probar_local.sh — 15 migraciones, 5 pruebas nuevas OK (usuario inexistente no cambia el estado). 
+Pendiente del usuario: ejecutar la migración 13 en Supabase y usar usuario_id = 2 en pruebas manuales de los webhooks de F2/F3.
+Commit: ninguno.
+
+## 2026-10-12 — fix | Responder directamente al remitente (botón "Responder correo")
+Síntoma: "Los datos enviados no son válidos. Revise el formulario." al responder directo desde la Bandeja.
+Causas: (1) al Supabase real le faltaba la migración 11 → no existe fn_responder_directo (PGRST202); (2) aun con la migración 11, el trigger de estados rechazaba nueva → respondida_dependencia (RN-AC-09): la "excepción" estaba documentada pero nunca implementada; (3) NOVA reemplaza el motivo real del backend por un texto genérico por código HTTP.
+Cambio: migración 20261012000000_responder_directo_transicion.sql (excepción solo dentro de fn_responder_directo mediante bandera local app.responder_directo; un único evento en el historial; ENT en nueva/remitida/devuelta/respondida); responder-directo/route.ts (valida el webhook antes de tocar la BD, 502 si n8n falla con reintento seguro, 409 para reglas de negocio, mensaje claro si falta la migración); sgdApi.ts (errorSgd: el motivo real llega a la pantalla); .env.example documenta N8N_WEBHOOK_*.
+Tests: probar_local.sh — 14 migraciones, 8 pruebas nuevas OK (incluye que otro UPDATE directo sigue bloqueado y el flujo directo + F3 cierra con SAL); backend tsc/eslint OK; navegador: el toast ahora muestra el motivo real.
+Pendiente del usuario: ejecutar en Supabase 20261011000000_f4_manual_y_correo_adicional.sql y 20261012000000_responder_directo_transicion.sql.
+Commit: ninguno.
+
 ## 2026-10-08 — Frontend · Visor de adjuntos para todos los formatos + rediseño de Archivo Central
 Cambio: VisorArchivos reescrito: PDF con react-pdf (páginas, zoom, ajuste al ancho, rotación; funciona en celular), Word .docx con docx-preview (ajuste al ancho, zoom; sin recorte del borde izquierdo), Excel .xlsx con exceljs (pestañas por hoja), texto/CSV/JSON/.eml, imágenes con zoom/rotación; aviso + descarga para formatos sin vista previa. Nueva dependencia docx-preview 0.4.1 (Apache-2.0). lib/pdfWorker.ts: worker del paquete en desarrollo, /pdf.worker.min.mjs en producción (como AreaDashboard). ArchivoCentralArea: sin segundo encabezado (el navbar de NOVA muestra "Archivo Central" bajo el usuario), menú lateral más grande y legible, fijo al hacer scroll y terminando en el footer, panel deslizable en celular, Correos sin asociar y Registro histórico conectados a Comunicaciones, sin contadores falsos, "Pronto" en secciones sin construir. Visor de vuelta en la columna izquierda (pedido del usuario). Pestañas y filtros de la Bandeja más grandes.
 Tests: tsc sin errores; navegador contra backend real: 2 PDF, 1 .docx (2 páginas, cabe completo) y 1 .txt se ven; celular 375 px sin desbordamiento, menú en panel, PDF ajustado.
