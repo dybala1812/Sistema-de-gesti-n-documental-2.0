@@ -67,6 +67,14 @@ En F2 y F3 el objeto de #9, #10 y #12 se devuelve tal cual a quien llamó el web
 | 18 | `/api/n8n/recordatorios/registrar` | `n8n_registrar_recordatorios` | `ids[], message_id` | objeto |
 | 19 | `/api/n8n/recordatorios/resumen-dia` | `n8n_resumen_dia` | `{}` | *array*, una fila por comunicación activa: `{ buzon, consecutivo, estado, vencida, por_escalar, dependencia, dias_desde_recepcion }` |
 
+## F5 · Envío de correo (1, agregada 2026-10-12)
+
+| # | Endpoint | Función SQL | Cuerpo | Respuesta |
+|---|---|---|---|---|
+| 22 | `/api/n8n/correos/enviado` | `n8n_registrar_correo_enviado` (migración 14) | `message_id, para, asunto, cuerpo, plantilla, comunicacion_id?, consecutivos[], archivo_ids[], enviado_en` | `{ id, comunicacion_id, duplicado }` |
+
+Guarda una copia de cada correo que envía F5 para verlo desde el historial de la comunicación (`GET /api/comunicaciones/{id}/eventos/{eventoId}/correo`). Idempotente por `message_id`. Si `comunicacion_id` no viene, se toma del primer consecutivo. En F5 va después de «Resultado del envío» con *On Error → Continue*: el correo ya salió y no debe reenviarse. Nodos listos para pegar: `flujos n8n/F5_nodos_copia_correo_PEGAR.json`.
+
 ## Archivos (2, ya existentes)
 
 | # | Endpoint | Usada por | Descripción |

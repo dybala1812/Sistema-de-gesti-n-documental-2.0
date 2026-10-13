@@ -376,6 +376,124 @@ begin
   perform pg_temp.ok((select bool_and(cuerpo = cuerpo_original) from plantilla_correo), 'plantillas: cuerpo_original actualizado (restablecer funciona)');
 end $$;
 
+-- ── Responder directo (migración 12) ────────────────────────────────────────
+do $$
+declare
+  e comunicacion; r comunicacion; s jsonb; j jsonb;
+  v_user bigint := fn_usuario_actual();
+  n_eventos integer;
+begin
+  -- 1) Desde "nueva" (el caso que fallaba)
+  e := fn_registrar_correo_entrante('<directo-1@mail>', 'Ana Ruiz', 'ana@estudiantes.uniautonoma.edu.co', 'Consulta', 'Hola', now(), null);
+  r := fn_responder_directo(v_user, e.id, 'Mensaje de respuesta');
+  perform pg_temp.ok(r.estado = 'respondida_dependencia', 'responder directo: nueva → respondida_dependencia');
+  perform pg_temp.ok((select count(*) from comunicacion_evento where comunicacion_id = e.id and tipo = 'respuesta_dependencia') = 1,
+                     'responder directo: un solo evento de respuesta en el historial');
+  perform pg_temp.ok((select (detalle->>'directo')::boolean from comunicacion_evento where comunicacion_id = e.id and tipo = 'respuesta_dependencia') is true,
+                     'responder directo: el evento queda marcado como directo');
+
+  -- 2) La bandera no queda activa: otro UPDATE directo sigue bloqueado
+  e := fn_registrar_correo_entrante('<directo-2@mail>', 'Luis', 'luis@x.co', 'Otra', 'Hola', now(), null);
+  perform pg_temp.debe_fallar(format($q$ update comunicacion set estado = 'respondida_dependencia' where id = %s $q$, e.id), 'RN-AC-09');
+  perform pg_temp.ok(coalesce(current_setting('app.responder_directo', true), '') <> 'on', 'la bandera de excepción no queda activa tras responder directo');
+
+  -- 3) Desde "remitida" y "devuelta" también sirve
+  e := fn_registrar_correo_entrante('<directo-3@mail>', 'Eva', 'eva@x.co', 'Tercera', 'Hola', now(), null);
+  perform fn_remitir_comunicacion(e.id, (select id from dependencia where codigo = '150'), 3);
+  r := fn_responder_directo(v_user, e.id, 'x');
+  perform pg_temp.ok(r.estado = 'respondida_dependencia', 'responder directo: remitida → respondida_dependencia');
+
+  -- 4) Ya respondida: no cambia de estado y deja constancia
+  n_eventos := (select count(*) from comunicacion_evento where comunicacion_id = e.id);
+  r := fn_responder_directo(v_user, e.id, 'segunda vez');
+  perform pg_temp.ok(r.estado = 'respondida_dependencia' and (select count(*) from comunicacion_evento where comunicacion_id = e.id) = n_eventos + 1,
+                     'responder directo: ya respondida deja una nota y no falla');
+
+  -- 5) Cerrada y anulada siguen rechazadas
+  perform pg_temp.debe_fallar(format($q$ select fn_responder_directo(%s, %s, 'x') $q$, v_user, (select id from comunicacion where estado = 'cerrada' and tipo = 'ENT' limit 1)), 'cerrada');
+
+  -- 6) Una salida SAL no se puede responder
+  perform pg_temp.debe_fallar(format($q$ select fn_responder_directo(%s, %s, 'x') $q$, v_user, (select id from comunicacion where tipo = 'SAL' limit 1)), 'no es una entrada');
+
+  -- 7) El flujo completo: responder directo → n8n_responder cierra y crea la SAL
+  e := fn_registrar_correo_entrante('<directo-4@mail>', 'Zoe', 'zoe@x.co', 'Cuarta', 'Hola', now(), null);
+  perform fn_responder_directo(v_user, e.id, 'listo');
+  j := n8n_leer_entrada(e.id);
+  perform pg_temp.ok(j->>'estado' = 'respondida_dependencia', 'F3 puede leer la entrada tras responder directo');
+  s := n8n_responder(v_user, e.id, 'RE: Cuarta', 'Su respuesta', '<resp-directa@sgd>', '{}');
+  perform pg_temp.ok(s->>'consecutivo' like 'SAL-%' and (select estado from comunicacion where id = e.id) = 'cerrada',
+                     'responder directo + F3: crea la SAL y cierra la entrada');
+end $$;
+
+-- ── Usuario que actúa (migración 13) ────────────────────────────────────────
+do $$
+declare e comunicacion; v_actual bigint := fn_usuario_actual();
+begin
+  perform pg_temp.debe_fallar($q$ select fn_set_usuario_actual(987654) $q$, '[campo:usuario|tipo:existente]');
+  perform fn_set_usuario_actual(null);
+  perform pg_temp.ok(true, 'fn_set_usuario_actual: acepta null (acción del sistema)');
+  perform fn_set_usuario_actual(fn_usuario_actual());
+  perform pg_temp.ok(true, 'fn_set_usuario_actual: acepta un usuario existente');
+  e := fn_registrar_correo_entrante('<usr-13@mail>', 'Ana', 'ana@x.co', 'Prueba usuario', 'Hola', now(), null);
+  perform pg_temp.debe_fallar(format($q$ select n8n_remitir(987654, %s, (select id from dependencia where codigo='150'), 3, '<r@sgd>', 'x') $q$, e.id), 'El usuario 987654 no existe');
+  perform pg_temp.ok((select estado from comunicacion where id = e.id) = 'nueva', 'usuario inexistente: la comunicación no cambia de estado');
+  perform pg_temp.debe_fallar(format($q$ select n8n_registrar_error_envio(987654, array[%s], null, '{"flujo":"F3"}') $q$, e.id), 'El usuario 987654 no existe');
+  perform fn_set_usuario_actual(v_actual);   -- restaura el usuario de la sesión de pruebas
+end $$;
+
+-- ── Migración 14: copia de los correos enviados ─────────────────────────────
+do $$
+declare
+  e comunicacion;
+  r jsonb;
+  r2 jsonb;
+begin
+  e := fn_registrar_correo_entrante('<copia-14@mail>', 'Ana', 'ana@x.co', 'Prueba copia', 'Hola', now(), null);
+  -- Sin comunicacion_id: se resuelve por el consecutivo del asunto.
+  r := n8n_registrar_correo_enviado('<env-14@sgd>', 'dep@x.co', format('[SGD %s] Remisión', e.consecutivo), 'Texto de la remisión',
+                                    'remision', null, array['ENT-1900-000001', e.consecutivo], '{}', null);
+  perform pg_temp.ok((r->>'comunicacion_id')::bigint = e.id, 'correo_enviado: comunicación tomada del consecutivo [SGD]');
+  perform pg_temp.ok((r->>'duplicado')::boolean = false, 'correo_enviado: primera copia registrada');
+  r2 := n8n_registrar_correo_enviado('<env-14@sgd>', 'dep@x.co', 'otro asunto', 'otro texto', 'remision', null, '{}', '{}', null);
+  perform pg_temp.ok((r2->>'duplicado')::boolean and r2->>'id' = r->>'id', 'correo_enviado: idempotente por Message-ID');
+  perform pg_temp.ok((select cuerpo from correo_enviado where message_id = '<env-14@sgd>') = 'Texto de la remisión', 'correo_enviado: el reintento no cambia la copia');
+  perform pg_temp.debe_fallar($q$ select n8n_registrar_correo_enviado('', 'a@x.co', 'x') $q$, '[campo:message_id|tipo:obligatorio]');
+  perform pg_temp.debe_fallar($q$ select n8n_registrar_correo_enviado('<m@x>', '', 'x') $q$, '[campo:para|tipo:obligatorio]');
+  perform pg_temp.debe_fallar($q$ select n8n_registrar_correo_enviado('<m@x>', 'a@x.co', 'x', null, null, 987654) $q$, '[campo:comunicacion_id|tipo:existente]');
+  perform pg_temp.debe_fallar($q$ update correo_enviado set cuerpo = 'x' $q$, 'inmutable');
+  perform pg_temp.debe_fallar($q$ delete from correo_enviado $q$, 'inmutable');
+end $$;
+
+-- ── Migración 15: varias respuestas de la dependencia ───────────────────────
+do $$
+declare
+  e comunicacion;
+  v_user bigint := fn_usuario_actual();
+  v_dep bigint := (select id from dependencia where codigo = '150');
+  a1 uuid := pg_temp.nuevo_archivo(repeat('a', 63) || '1', 'respuesta1.pdf');
+  a2 uuid := pg_temp.nuevo_archivo(repeat('a', 63) || '2', 'respuesta2.pdf');
+  ev1 bigint; ev2 bigint;
+begin
+  e := fn_registrar_correo_entrante('<varias-15@mail>', 'Ana', 'ana@x.co', 'Varias respuestas', 'Hola', now(), null);
+  perform n8n_remitir(v_user, e.id, v_dep, 3, '<rem-15@sgd>', 'Favor responder');
+  perform n8n_registrar_respuesta_dependencia(e.id, 'persona1@uniautonoma.edu.co', 'RE: 1', 'Primera respuesta', '<r1-15@mail>', now()::text, array[a1], '[]');
+  perform n8n_registrar_respuesta_dependencia(e.id, 'persona2@uniautonoma.edu.co', 'RE: 2', 'Segunda respuesta', '<r2-15@mail>', now()::text, array[a2], '[]');
+  select id into ev1 from comunicacion_evento where comunicacion_id = e.id and message_id = '<r1-15@mail>';
+  select id into ev2 from comunicacion_evento where comunicacion_id = e.id and message_id = '<r2-15@mail>';
+  perform pg_temp.ok((select count(*) from comunicacion_evento where comunicacion_id = e.id and tipo = 'respuesta_dependencia') = 2,
+                     'varias respuestas: cada correo es su propio evento');
+  perform pg_temp.ok((select detalle->>'cuerpo' from comunicacion_evento where id = ev1) = 'Primera respuesta'
+                     and (select detalle->>'cuerpo' from comunicacion_evento where id = ev2) = 'Segunda respuesta',
+                     'varias respuestas: no se pierde ni se sobrescribe el texto de ninguna');
+  perform pg_temp.ok(exists (select 1 from comunicacion_adjunto where evento_id = ev1 and archivo_id = a1)
+                     and exists (select 1 from comunicacion_adjunto where evento_id = ev2 and archivo_id = a2),
+                     'varias respuestas: cada adjunto queda con su correo');
+  perform pg_temp.ok((select estado from comunicacion where id = e.id) = 'respondida_dependencia', 'varias respuestas: el estado sigue en respondida_dependencia');
+  perform n8n_registrar_respuesta_dependencia(e.id, 'persona2@uniautonoma.edu.co', 'RE: 2', 'Segunda respuesta', '<r2-15@mail>', now()::text, array[a2], '[]');
+  perform pg_temp.ok((select count(*) from comunicacion_evento where comunicacion_id = e.id and tipo = 'respuesta_dependencia') = 2,
+                     'varias respuestas: reintento del mismo correo no duplica');
+end $$;
+
 -- ── Auditoría ────────────────────────────────────────────────────────────────
 do $$
 begin

@@ -11,6 +11,10 @@ Universidad Autónoma (Uniautónoma del Cauca) · práctica profesional. Reempla
 - **Cómo programar:** `.claude/skills/` (espejo `.agents/skills/`; mantener ambas sincronizadas): `desarrollo`, `seguridad`, `testing`, `git`, `frontend/`.
 - Frontend: `NOVA_FT/` (React + TS + Vite + Tailwind v4 + shadcn; repo Git anidado). Backend: `backned_sistema_gestion_documental/` — **base de datos lista** en `supabase/` (migraciones, seeds, pruebas: `scripts/probar_local.sh`); servidor de aplicación por decidir (P-11). BD: Supabase PostgreSQL. Automatización: n8n (F1–F11).
 
+## Regla de trabajo: no tocar lo ajeno
+
+No se modifica nada que no nos pertenezca o que no hayamos hecho: código original de NOVA (PQRS, tickets, aulas, administración…), cambios de otros compañeros, ramas ajenas (`main` de NOVA) ni otros repositorios. Si algo ajeno falla o rompe una regla, **se reporta**, no se corrige. En los commits, `git add` solo de archivos propios. Se trabaja en la rama del equipo **`desarrollo-archivo-central`**, nunca directo en `main`.
+
 ## Antes de escribir código
 
 1. El F-02 debe estar **firmado** (SGD-000) y las maquetas **validadas** (SGD-002).

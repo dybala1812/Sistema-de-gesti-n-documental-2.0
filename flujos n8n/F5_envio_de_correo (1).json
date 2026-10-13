@@ -278,6 +278,52 @@
         0,
         -170
       ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/api/n8n/correos/enviado",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  message_id: $('Resultado del envío').first().json.message_id,\n  para: $('Armar mensaje y etiqueta [SGD]').first().json.to,\n  asunto: $('Armar mensaje y etiqueta [SGD]').first().json.asunto,\n  cuerpo: $('Armar mensaje y etiqueta [SGD]').first().json.cuerpo,\n  plantilla: $('Llamado desde otro flujo').first().json.plantilla || null,\n  comunicacion_id: Number($('Llamado desde otro flujo').first().json.contexto?.comunicacion_id) || null,\n  consecutivos: [].concat($('Llamado desde otro flujo').first().json.consecutivos || $('Llamado desde otro flujo').first().json.consecutivo || []),\n  archivo_ids: $('Armar mensaje y etiqueta [SGD]').first().json.archivo_ids || [],\n  enviado_en: $('Resultado del envío').first().json.enviado_en\n}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "2fc5ab5f-7ae3-4d51-ae9a-ec0d9d8bdf72",
+      "name": "Guardar copia del correo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2600,
+        170
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REEMPLAZAR",
+          "name": "Backend SGD (Bearer N8N_SERVICE_TOKEN)"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
+      "notes": "El correo YA salió: si guardar la copia falla, no se detiene el flujo (no se reenvía)."
+    },
+    {
+      "parameters": {
+        "jsCode": "// El subflujo devuelve a quien lo llamó el resultado del envío (no la respuesta de la copia).\nreturn $('Resultado del envío').all();\n"
+      },
+      "id": "ad243869-0361-4d66-b396-bf7423f634c4",
+      "name": "Devolver resultado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        170
+      ]
     }
   ],
   "connections": {
@@ -392,6 +438,28 @@
         [
           {
             "node": "Resultado del envío",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado del envío": {
+      "main": [
+        [
+          {
+            "node": "Guardar copia del correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar copia del correo": {
+      "main": [
+        [
+          {
+            "node": "Devolver resultado",
             "type": "main",
             "index": 0
           }
