@@ -148,38 +148,13 @@ export function extraerToken(request: Request): string | null {
   return token;
 }
 
-/**
- * SOLO DESARROLLO: si SGD_DEV_TOKEN está configurado y el request lo envía,
- * se devuelve un usuario de prueba sin consultar NOVA. Útil cuando NOVA no
- * está disponible localmente. Nunca activar en producción.
- */
-function usuarioDesarrollo(token: string): UsuarioSGD | null {
-  const esperado = process.env.SGD_DEV_TOKEN;
-  if (!esperado || process.env.NODE_ENV === "production") return null;
-  const a = Buffer.from(token);
-  const b = Buffer.from(esperado);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
-  return {
-    id: 1,
-    nova_user_id: "dev-user",
-    email: "dev@localhost",
-    nombre: "Usuario",
-    apellido: "Desarrollo",
-    perfil: "archivo_central",
-    dependencia_id: null,
-    nova_is_staff: true,
-    nova_roles: ["ADMIN"],
-  };
-}
-
 export async function obtenerUsuarioAutenticado(request: Request): Promise<UsuarioSGD> {
   assertSupabaseConfig();
   const token = extraerToken(request);
   if (!token) {
     throw new Response(JSON.stringify({ error: "Token requerido" }), { status: 401 });
   }
-  const dev = usuarioDesarrollo(token);
-  if (dev) return dev;
+  // El token de pruebas también pasa por validarTokenNOVA: así el usuario existe en la tabla `usuario`.
   return validarTokenNOVA(token);
 }
 
