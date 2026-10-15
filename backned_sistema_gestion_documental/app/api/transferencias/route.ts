@@ -1,36 +1,67 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";          // AJUSTA: el nombre/ruta real de tu cliente de Supabase
-// import { requireUser } from "@/lib/auth";        // AJUSTA: descomenta con la función que ya usas en comunicaciones
+import { supabase } from "@/lib/supabase"; // AJUSTA: nombre/ruta real de tu cliente de Supabase
+// import { requireUser } from "@/lib/auth"; // AJUSTA: la validación que usan las rutas de comunicaciones
 
 const TIPOS = ["fisica", "digital", "ambas"] as const;
 
-/** GET /api/transferencias?anio=2024  → lista (opcionalmente filtrada por año) */
+// Los enums se interpretan por texto, así que no importa cómo se llamen exactamente en la base
+const mapTipo = (s: string): "fisica" | "digital" | "ambas" => {
+  const t = s.toLowerCase();
+  if (/mixt|ambas/.test(t) || (t.includes("fis") && t.includes("dig"))) return "ambas";
+  return t.includes("dig") ? "digital" : "fisica";
+};
+const mapEstado = (s: string): "Borrador" | "En revisión" | "Recibida" => {
+  const t = s.toLowerCase();
+  if (t.includes("recib")) return "Recibida";
+  if (t.includes("borrador")) return "Borrador";
+  return "En revisión";
+};
+
+/** GET /api/transferencias?anio=2024 → lista para la pantalla "Transferencias documentales" */
 export async function GET(req: Request) {
   try {
-    // const user = await requireUser(req);          // AJUSTA: protege la ruta antes de usarla en serio
-
+    // const user = await requireUser(req);
     const anio = new URL(req.url).searchParams.get("anio");
-    let q = supabase.from("transferencias").select("*").order("fecha", { ascending: true, nullsFirst: false });
+    let q = supabase
+      .from("transferencia")
+      .select("id, codigo, anio, tipo, estado, funcionario_entrega, descripcion, contenido, unidades, registrado_en, recibido_en, dependencia:dependencia_id(nombre)")
+      .is("anulado_en", null)
+      .order("registrado_en", { ascending: true });
     if (anio) q = q.eq("anio", Number(anio));
 
     const { data, error } = await q;
     if (error) throw error;
+    const filas = data ?? [];
 
-    // Mismo formato que espera Transferencias.tsx en el frontend
+    // Documentos de cada transferencia que siguen por clasificar
+    const ids = filas.map(t => t.id);
+    const porClasificar = new Map<number, number>();
+    if (ids.length > 0) {
+      const { data: docs, error: e2 } = await supabase
+        .from("documento").select("transferencia_id")
+        .in("transferencia_id", ids).eq("estado", "por_clasificar");
+      if (e2) throw e2;
+      for (const d of docs ?? []) porClasificar.set(d.transferencia_id, (porClasificar.get(d.transferencia_id) ?? 0) + 1);
+    }
+
     return NextResponse.json(
-      (data ?? []).map(t => ({
-        codigo: t.codigo,
-        dependencia: t.dependencia,
-        anio: t.anio,
-        tipo: t.tipo,
-        estado: t.estado,
-        fecha: t.fecha,
-        entrega: t.responsable,
-        contenido: t.contenido,
-        detalle: t.detalle ?? "",
-        unidades: t.unidades,
-        porClasificar: t.por_clasificar || undefined,
-      }))
+      filas.map(t => {
+        const dep = Array.isArray(t.dependencia) ? t.dependencia[0] : t.dependencia;
+        return {
+          id: t.id,
+          codigo: t.codigo,
+          dependencia: dep?.nombre ?? "—",
+          anio: t.anio,
+          tipo: mapTipo(String(t.tipo)),
+          estado: mapEstado(String(t.estado)),
+          fecha: String(t.recibido_en ?? t.registrado_en).slice(0, 10),
+          entrega: t.funcionario_entrega,
+          contenido: t.contenido ?? "Documentos",
+          detalle: t.descripcion ?? "",
+          unidades: t.unidades ?? 0,
+          porClasificar: porClasificar.get(t.id) || undefined,
+        };
+      })
     );
   } catch (e) {
     console.error("GET /api/transferencias", e);
@@ -38,40 +69,43 @@ export async function GET(req: Request) {
   }
 }
 
-/** POST /api/transferencias → crea un BORRADOR (el código TR-… se asigna al registrar) */
+/** POST /api/transferencias → crea y registra la transferencia con su inventario (todo en una transacción) */
 export async function POST(req: Request) {
   try {
-    // const user = await requireUser(req);
-    const body = await req.json();
+    // const user = await requireUser(req);   // AJUSTA: protege la ruta
+    const b = await req.json().catch(() => null);
+    if (!b) return NextResponse.json({ mensaje: "Cuerpo de la petición no válido" }, { status: 400 });
 
-    const { dependencia, anio, tipo, contenido, responsable, ubicacion } = body ?? {};
-    const anioMaximo = new Date().getFullYear() - 2; // regla de los dos años
-
-    if (!dependencia || !contenido || !String(responsable ?? "").trim())
+    // Validación básica (la regla de fondo —dos años, fechas, dependencia— la repite la función SQL)
+    if (!b.dependencia || !String(b.contenido ?? "").trim() || !String(b.responsable ?? "").trim())
       return NextResponse.json({ mensaje: "Faltan datos obligatorios" }, { status: 400 });
-    if (!TIPOS.includes(tipo))
-      return NextResponse.json({ mensaje: "Tipo de entrega no válido" }, { status: 400 });
-    if (!Number.isInteger(anio) || anio > anioMaximo)
-      return NextResponse.json({ mensaje: `Solo se puede transferir hasta ${anioMaximo}` }, { status: 400 });
-    if ((tipo === "fisica" || tipo === "ambas") && !String(ubicacion ?? "").trim())
-      return NextResponse.json({ mensaje: "Falta la ubicación física" }, { status: 400 });
+    if (!TIPOS.includes(b.tipo)) return NextResponse.json({ mensaje: "Tipo de entrega no válido" }, { status: 400 });
+    if (!Array.isArray(b.carpetas) || b.carpetas.length === 0)
+      return NextResponse.json({ mensaje: "Falta el inventario FUID" }, { status: 400 });
+    if (b.carpetas.length > 5000)
+      return NextResponse.json({ mensaje: "El inventario es demasiado grande" }, { status: 400 });
 
-    const { data, error } = await supabase
-      .from("transferencias")
-      .insert({
-        dependencia, anio, tipo, contenido,
-        responsable: String(responsable).trim(),
-        ubicacion: ubicacion ?? null,
-        estado: "Borrador",
-        creado_por: "sistema", // AJUSTA: user.email (o el id) cuando tengas requireUser
-      })
-      .select("id")
-      .single();
-    if (error) throw error;
+    const { data, error } = await supabase.rpc("registrar_transferencia", {
+      p: {
+        dependencia: b.dependencia, anio: b.anio, tipo: b.tipo,
+        contenido: b.contenido, responsable: b.responsable, ubicacion: b.ubicacion ?? "",
+        carpetas: b.carpetas,
+        usuario_id: null, // AJUSTA: id de la tabla `usuario` del usuario autenticado (user.id)
+      },
+    });
 
-    return NextResponse.json({ id: data.id }, { status: 201 });
+    if (error) {
+      // Los errores "raise exception" de la función son de validación: se devuelven con su mensaje
+      const validacion = error.code === "P0001";
+      if (!validacion) console.error("POST /api/transferencias", error);
+      return NextResponse.json(
+        { mensaje: validacion ? error.message : "No se pudo registrar la transferencia" },
+        { status: validacion ? 400 : 500 }
+      );
+    }
+    return NextResponse.json(data, { status: 201 });
   } catch (e) {
     console.error("POST /api/transferencias", e);
-    return NextResponse.json({ mensaje: "No se pudo guardar el borrador" }, { status: 500 });
+    return NextResponse.json({ mensaje: "No se pudo registrar la transferencia" }, { status: 500 });
   }
 }
