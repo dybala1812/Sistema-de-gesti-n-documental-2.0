@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
       dependencia_id: enteroQuery(searchParams, "dependencia_id"),
       tipo: searchParams.get("tipo") ?? undefined,
       q: searchParams.get("q") ?? undefined,
+      limite: enteroQuery(searchParams, "limite"),
     };
 
     const comunicaciones = await listarComunicaciones(usuario, filtros);

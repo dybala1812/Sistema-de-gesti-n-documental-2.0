@@ -104,6 +104,7 @@ export type FiltroBandeja = {
   dependencia_id?: number;
   tipo?: string;
   q?: string;
+  limite?: number;
 };
 
 function normalizarTexto(val: unknown): string | null {
@@ -265,6 +266,10 @@ export async function listarComunicaciones(
     query = query.or(
       `consecutivo.ilike.%${normalizado}%,asunto.ilike.%${normalizado}%,remitente_nombre.ilike.%${normalizado}%`
     );
+  }
+
+  if (filtros.limite && filtros.limite > 0) {
+    query = query.limit(filtros.limite);
   }
 
   const { data, error } = await query;
