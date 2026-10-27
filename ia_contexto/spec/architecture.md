@@ -105,6 +105,41 @@ Estructura de carpetas (propuesta, la raíz se configura por variable de entorno
 
 La carpeta es solo organización física: la fuente de verdad de la clasificación es la BD. Si un documento se reclasifica, se actualiza la BD y no hace falta mover el archivo.
 
+## Contrato de errores de API (D-21, RN-AC-15)
+
+Toda respuesta 4xx/5xx es JSON. No se envía HTML ni un mensaje genérico de NOVA que tape el motivo.
+
+**Error de sistema** (5xx: fallo interno, de BD, de configuración, de un servicio externo o del contador de consecutivos):
+
+```json
+{ "error": "1011", "motivo": "El consecutivo generado ya existía", "consecutivo": "ENT-2026-000041" }
+```
+
+`consecutivo` **solo** se incluye en los errores 1010/1011 (fallo del contador o número ya existente). Fuera de producción el motivo agrega entre paréntesis el detalle técnico para depurar; en producción no.
+
+**Error de formulario** (4xx: validación, duplicado, campo faltante, permiso, no existe):
+
+```json
+{ "error": "Ya existe un registro con ese nombre en esta dependencia", "campo": "nombre", "tipo": "duplicado" }
+```
+
+Sin número de error y sin consecutivo: un fallo de validación **no consume** consecutivo (el contador sube dentro de la misma transacción y se revierte con el error; prueba en `pruebas_reglas.sql`). El frontend (`sgdApi.ts` › `mensajeErrorSgd`) muestra la descripción tal cual y, si viene `campo`, marca ese campo; un error de sistema se muestra como `Error 1001: <motivo>`.
+
+**Catálogo de errores de sistema** (`backned_sistema_gestion_documental/lib/errors.ts` › `ERRORES_SISTEMA`; pruebas en `tests/errores.test.mjs`, `npm test`):
+
+| Número | Clave | Motivo | Cuándo |
+|---|---|---|---|
+| 1000 | INTERNO | Ocurrió un error inesperado en el servidor | Excepción no prevista |
+| 1001 | BASE_DATOS | La base de datos no pudo completar la operación | Error de PostgreSQL/PostgREST que no es de validación |
+| 1002 | MIGRACION | Falta aplicar una migración en la base de datos | Función o tabla inexistente (PGRST202, 42883, 42P01) |
+| 1003 | CONFIGURACION | Falta configuración en el servidor | Variables de entorno de Supabase u otras ausentes |
+| 1004 | SERVICIO_EXTERNO | Un servicio externo (n8n o NOVA) no respondió | Webhook de n8n o perfil de NOVA caído |
+| 1005 | ALMACENAMIENTO | No se pudo leer o guardar el archivo en el almacenamiento | Archivo ausente en disco (sin exponer la ruta) |
+| 1010 | CONSECUTIVO | No se pudo generar el consecutivo | Falla de `fn_siguiente_consecutivo` |
+| 1011 | CONSECUTIVO_EXISTENTE | El consecutivo generado ya existía | Choque de unicidad en `comunicacion.consecutivo` |
+
+Un número nuevo se agrega al catálogo (sin reutilizar números) y a la prueba que verifica que no se repiten.
+
 ## Seguridad de datos (propuesta)
 
 - Activar **RLS** en todas las tablas de Supabase; n8n usa una credencial de servicio guardada solo en n8n.

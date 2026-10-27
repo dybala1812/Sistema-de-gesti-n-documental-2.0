@@ -1,3 +1,7 @@
 # Pruebas de aceptación
 
-Un archivo por módulo con escenarios Dado/Cuando/Entonces y su ID (`TEST-RF-xxx-NN`). Opcional: si los criterios ya están en `requirements.md` o en `historias/`, borra esta carpeta.
+Documento operativo para el verificador (cierra la matriz del F-02 §8):
+
+- **[F-05_plan_pruebas.md](./F-05_plan_pruebas.md)** — plan de la ronda actual: solo lo ya implementado (`tareas-hechas` / `tareas-en-revision`), defectos conocidos SGD-087 a SGD-090, y hoja de resultados.
+
+Los criterios Dado/Cuando/Entonces de cada requisito siguen en `../requirements.md`. Al devolver el F-05 lleno, actualizar `../trazabilidad.md` (columna Resultado).
