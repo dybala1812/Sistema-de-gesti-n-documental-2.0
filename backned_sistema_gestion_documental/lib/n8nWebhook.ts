@@ -8,7 +8,7 @@ export async function dispararWebhookN8N(
   payload: Record<string, unknown>,
 ): Promise<unknown> {
   if (!url) {
-    throw new Error("Webhook de n8n no configurado (falta la variable de entorno)");
+    throw Object.assign(new Error("Webhook de n8n no configurado (falta la variable de entorno)"), { configuracion: true });
   }
 
   const token = process.env.N8N_SERVICE_TOKEN;
@@ -34,7 +34,8 @@ export async function dispararWebhookN8N(
       typeof json === "object" && json !== null && "error" in json
         ? String((json as { error: string }).error)
         : text;
-    throw Object.assign(new Error(`n8n respondió ${res.status}: ${detalle}`), { status: res.status });
+    // Fallo de un servicio externo, no del formulario: handleError responde error de sistema 1004.
+    throw Object.assign(new Error(detalle), { servicio: "n8n", statusExterno: res.status });
   }
 
   return json;

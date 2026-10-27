@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase"; // AJUSTA: nombre/ruta real de tu cliente de Supabase
+import { errorFormulario, errorSistema } from "@/lib/errors";
 // import { requireUser } from "@/lib/auth"; // AJUSTA: la validación que usan las rutas de comunicaciones
 
 const TIPOS = ["fisica", "digital", "ambas"] as const;
@@ -65,7 +66,7 @@ export async function GET(req: Request) {
     );
   } catch (e) {
     console.error("GET /api/transferencias", e);
-    return NextResponse.json({ mensaje: "No se pudieron cargar las transferencias" }, { status: 500 });
+    return errorSistema("INTERNO", 500, { detalle: "no se pudieron cargar las transferencias" });
   }
 }
 
@@ -74,16 +75,16 @@ export async function POST(req: Request) {
   try {
     // const user = await requireUser(req);   // AJUSTA: protege la ruta
     const b = await req.json().catch(() => null);
-    if (!b) return NextResponse.json({ mensaje: "Cuerpo de la petición no válido" }, { status: 400 });
+    if (!b) return errorFormulario("Cuerpo de la petición no válido", 400);
 
     // Validación básica (la regla de fondo —dos años, fechas, dependencia— la repite la función SQL)
     if (!b.dependencia || !String(b.contenido ?? "").trim() || !String(b.responsable ?? "").trim())
-      return NextResponse.json({ mensaje: "Faltan datos obligatorios" }, { status: 400 });
-    if (!TIPOS.includes(b.tipo)) return NextResponse.json({ mensaje: "Tipo de entrega no válido" }, { status: 400 });
+      return errorFormulario("Faltan datos obligatorios", 400);
+    if (!TIPOS.includes(b.tipo)) return errorFormulario("Tipo de entrega no válido", 400);
     if (!Array.isArray(b.carpetas) || b.carpetas.length === 0)
-      return NextResponse.json({ mensaje: "Falta el inventario FUID" }, { status: 400 });
+      return errorFormulario("Falta el inventario FUID", 400);
     if (b.carpetas.length > 5000)
-      return NextResponse.json({ mensaje: "El inventario es demasiado grande" }, { status: 400 });
+      return errorFormulario("El inventario es demasiado grande", 400);
 
     const { data, error } = await supabase.rpc("registrar_transferencia", {
       p: {
@@ -98,14 +99,13 @@ export async function POST(req: Request) {
       // Los errores "raise exception" de la función son de validación: se devuelven con su mensaje
       const validacion = error.code === "P0001";
       if (!validacion) console.error("POST /api/transferencias", error);
-      return NextResponse.json(
-        { mensaje: validacion ? error.message : "No se pudo registrar la transferencia" },
-        { status: validacion ? 400 : 500 }
-      );
+      return validacion
+        ? errorFormulario(error.message, 400)
+        : errorSistema("BASE_DATOS", 500, { detalle: "no se pudo registrar la transferencia" });
     }
     return NextResponse.json(data, { status: 201 });
   } catch (e) {
     console.error("POST /api/transferencias", e);
-    return NextResponse.json({ mensaje: "No se pudo registrar la transferencia" }, { status: 500 });
+    return errorSistema("INTERNO", 500, { detalle: "no se pudo registrar la transferencia" });
   }
 }
