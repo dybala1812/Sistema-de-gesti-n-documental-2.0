@@ -143,7 +143,7 @@ Así se cierra progreso parcial y ninguna tarea queda atrapada en revisión por 
 ```markdown
 ## AAAA-MM-DD — SGD-001 cerrada
 Cambio: validación del login en src/features/auth/LoginForm.tsx
-Tests: {{CMD_TEST}} (12 pasan, 0 fallan)
+Tests: npm test (12 pasan, 0 fallan)
 Seguridad: sin secretos nuevos; input validado antes de enviar
 Commit: a1b2c3d
 ```
