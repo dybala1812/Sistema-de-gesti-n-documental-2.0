@@ -141,18 +141,16 @@ export function handleError(error: unknown): Response {
   const digest = (error as { digest?: unknown } | null)?.digest;
   if (typeof digest === "string" && /^(NEXT_|DYNAMIC_SERVER_USAGE)/.test(digest)) throw error;
 
-  // Errores de validación con campo/tipo (p. ej. SolicitudInvalida de lib/n8n.ts).
-  const campo = (error as { campo?: string } | null)?.campo;
-  const tipo = (error as { tipo?: string } | null)?.tipo;
-  if (error instanceof Error && (campo || tipo)) {
-    return errorFormulario(error.message, 400, { campo, tipo });
-  }
-
   // Errores con código HTTP propio (p. ej. lib/archivos.ts: 413 tamaño, 415 formato, 404 no existe).
   // Sin esto n8n recibiría 500 y reintentaría el mismo correo indefinidamente.
   const status = (error as { status?: unknown } | null)?.status;
-  if (error instanceof Error && typeof status === "number" && status >= 400 && status < 500) {
-    return errorFormulario(error.message, status);
+  const status4xx = typeof status === "number" && status >= 400 && status < 500 ? status : null;
+
+  // Errores de validación con campo/tipo (p. ej. SolicitudInvalida de lib/n8n.ts).
+  const campo = (error as { campo?: string } | null)?.campo;
+  const tipo = (error as { tipo?: string } | null)?.tipo;
+  if (error instanceof Error && (campo || tipo || status4xx)) {
+    return errorFormulario(error.message, status4xx ?? 400, { campo, tipo });
   }
 
   // Servicio externo que respondió con error (lib/n8nWebhook.ts). El detalle técnico solo fuera de producción.
