@@ -620,6 +620,165 @@ begin
   perform fn_set_usuario_actual(v_ac);   -- restaura el usuario de la sesión de pruebas
 end $$;
 
+-- ── Parámetros en lenguaje de usuario (SGD-090) ─────────────────────────────
+do $$
+begin
+  perform pg_temp.ok(not exists (select 1 from parametro where descripcion ~ '(RNF|RF|RN)-AC|\mP-[0-9]+|mockup|tentativo'),
+    'SGD-090: las descripciones de parámetros no citan códigos de requisitos ni notas internas');
+  perform pg_temp.ok(not exists (select 1 from parametro where coalesce(trim(descripcion), '') = ''),
+    'SGD-090: todos los parámetros tienen descripción');
+end $$;
+
+-- ── Migración 19: registro histórico de comunicaciones (SGD-044) ────────────
+do $$
+declare
+  v_ac bigint := fn_usuario_actual();
+  v_dep bigint;   -- usuario de Dependencia (150), creado abajo
+  v_dep150 bigint := (select id from dependencia where codigo = '150');
+  v_filas jsonb := '[
+    {"tipo":"Recibida","numero_original":"385","fecha":"2023-02-28","asunto":"Invitación a mesa departamental","remitente":"Remitente ficticio","dependencia":"150"},
+    {"tipo":"Enviada","numero_original":"12","fecha":"2023-03-05","asunto":"Respuesta a la invitación","destinatario":"Destinatario ficticio"},
+    {"tipo":"Recibida","numero_original":"400","fecha":"2023-03-10","asunto":"Solicitud A"},
+    {"tipo":"recibida","numero_original":"400","fecha":"2023-04-01","asunto":"Solicitud B"},
+    {"tipo":"Correo","numero_original":"1","fecha":"2023-01-01","asunto":"Tipo desconocido"},
+    {"tipo":"Interna","numero_original":"7","fecha":"31/02/2023","asunto":"Fecha imposible"},
+    {"tipo":"Interna","numero_original":"8","fecha":"2023-05-02","asunto":"Circular","dependencia":"Dependencia inexistente"}
+  ]';
+  r jsonb;
+  v_antes bigint := (select count(*) from comunicacion where origen = 'historico' and anio = 2023);
+  c record;
+begin
+  v_dep := (fn_sincronizar_usuario_nova('{"id":"88888888-8888-8888-8888-888888888888","email":"dep.historico@uniautonoma.edu.co","nombre":"Dep","apellido":"Histórico"}'::jsonb)).id;
+  update usuario set perfil = 'dependencia', dependencia_id = v_dep150 where id = v_dep;
+
+  -- Vista previa: resultados por fila sin guardar nada
+  r := fn_historico_importar(v_ac, v_filas, false);
+  perform pg_temp.ok((r->>'total')::int = 7 and (r->>'nuevas')::int = 3 and (r->>'revisar')::int = 2 and (r->>'errores')::int = 2,
+    'SGD-044: vista previa clasifica nuevas, para revisar y con error');
+  perform pg_temp.ok((select count(*) from comunicacion where origen = 'historico' and anio = 2023) = v_antes,
+    'SGD-044: la vista previa no guarda nada');
+  perform pg_temp.ok(r->'filas'->4->>'campo' = 'tipo' and r->'filas'->5->>'campo' = 'fecha',
+    'SGD-044: el error de la fila señala el campo');
+
+  -- Confirmar: comunicaciones cerradas, consecutivo del sistema y número original conservado (RN-AC-10)
+  r := fn_historico_importar(v_ac, v_filas, true);
+  perform pg_temp.ok((r->>'nuevas')::int = 3, 'SGD-044: confirmar crea solo las filas válidas');
+  select * into c from comunicacion where tipo = 'ENT' and anio = 2023 and consecutivo_original = '385';
+  perform pg_temp.ok(c.consecutivo = 'ENT-2023-900001' and c.estado = 'cerrada' and c.origen = 'historico' and c.dependencia_id = v_dep150,
+    'RF-AC-019: histórico cerrado, con consecutivo adaptado y dependencia por código');
+  perform pg_temp.ok(exists (select 1 from comunicacion where tipo = 'SAL' and anio = 2023 and consecutivo_original = '12' and comunicacion_entrada_id is null),
+    'SGD-044: una salida histórica no necesita entrada enlazada');
+  perform pg_temp.ok(r->'filas'->6->>'aviso' like 'No se encontró la dependencia%' and
+    (select dependencia_id from comunicacion where tipo = 'INT' and anio = 2023 and consecutivo_original = '8') is null,
+    'SGD-044: dependencia desconocida se importa sin dependencia y con aviso');
+  perform pg_temp.ok(not exists (select 1 from comunicacion where anio = 2023 and consecutivo_original = '400'),
+    'RF-AC-019: número repetido en el mismo año se marca para revisión y no se importa');
+  perform pg_temp.ok(exists (select 1 from auditoria where accion = 'importar' and recurso_tipo = 'comunicacion_historico' and usuario_id = v_ac),
+    'SGD-044: la importación queda en la auditoría con el usuario');
+
+  -- Idempotencia: el mismo Excel otra vez no duplica
+  r := fn_historico_importar(v_ac, v_filas, true);
+  perform pg_temp.ok((r->>'nuevas')::int = 0 and (r->>'ya_importadas')::int = 3
+    and (select count(*) from comunicacion where origen = 'historico' and anio = 2023) = v_antes + 3,
+    'RF-AC-019: importar el mismo Excel dos veces no duplica');
+  r := fn_historico_importar(v_ac, '[{"numero_original":"386","fecha":"2023-02-28","asunto":"Otra"}]', true, 'recibidas');
+  perform pg_temp.ok(r->'filas'->0->>'consecutivo' = 'ENT-2023-900002', 'SGD-044: tipo para todas las filas y numeración continua del bloque histórico');
+
+  -- Permisos
+  r := fn_historico_importar(v_dep, v_filas, true);
+  perform pg_temp.ok((r->>'denegado')::boolean and exists (select 1 from auditoria where recurso_tipo = 'comunicacion_historico'
+    and accion = 'importar' and resultado = 'denegado' and usuario_id = v_dep), 'SGD-044: Dependencia no importa y el intento queda auditado');
+
+  -- Calendario y lista del mes
+  r := fn_historico_calendario(v_ac, 2023);
+  perform pg_temp.ok(jsonb_array_length(r->'meses') = 12 and (r->'meses'->1->>'importadas')::int >= 2 and r->'anios' @> '[2023]',
+    'RF-AC-019: calendario de 12 meses con importadas');
+  r := fn_historico_calendario(v_ac, 2023, 'enviadas');
+  perform pg_temp.ok((r->'meses'->2->>'importadas')::int >= 1 and (r->'meses'->1->>'importadas')::int = 0,
+    'RF-AC-019: filtro por enviadas');
+  r := fn_historico_calendario(v_dep, 2023);
+  perform pg_temp.ok((r->'meses'->1->>'total')::int >= 1 and (r->'meses'->4->>'total')::int = 0,
+    'SGD-044: Dependencia solo ve el histórico de su dependencia');
+  r := fn_historico_mes(v_ac, 2023, 2);
+  perform pg_temp.ok((r->>'total')::int >= 2 and r->'filas' @> '[{"consecutivo":"ENT-2023-900001","consecutivo_original":"385"}]',
+    'RF-AC-019: lista de comunicaciones del mes');
+  perform pg_temp.debe_fallar($q$ select fn_historico_calendario(fn_usuario_actual(), 2023, 'faxes') $q$, 'Tipo no válido');
+  perform pg_temp.debe_fallar($q$ select fn_historico_mes(fn_usuario_actual(), 2023, 13) $q$, 'Mes no válido');
+  perform fn_set_usuario_actual(v_ac);   -- se restaura el usuario de la sesión de pruebas
+end $$;
+
+-- ── Migración 20: archivo navegable y búsqueda avanzada (SGD-032) ───────────
+do $$
+declare
+  v_ac bigint := fn_usuario_actual();
+  v_dep110 bigint := (select id from dependencia where codigo = '110');
+  v_dep150 bigint := (select id from dependencia where codigo = '150');
+  v_as110 bigint := (select id from asunto where dependencia_id = (select id from dependencia where codigo = '110') and nombre = 'Actas');
+  v_as150 bigint := (select id from asunto where dependencia_id = (select id from dependencia where codigo = '150') order by id limit 1);
+  v_trd110 text := (select t.codigo from asunto a join trd t on t.id = a.trd_id where a.nombre = 'Actas'
+                     and a.dependencia_id = (select id from dependencia where codigo = '110'));
+  v_udep bigint;
+  v_ura bigint;
+  r jsonb;
+begin
+  v_udep := (fn_sincronizar_usuario_nova('{"id":"99999999-0000-4000-8000-000000000001","email":"dep.archivo@uniautonoma.edu.co","nombre":"Dep","apellido":"Archivo"}'::jsonb)).id;
+  update usuario set perfil = 'dependencia', dependencia_id = v_dep150 where id = v_udep;
+  v_ura := (fn_sincronizar_usuario_nova('{"id":"99999999-0000-4000-8000-000000000002","email":"ra.archivo@uniautonoma.edu.co","nombre":"RA","apellido":"Archivo"}'::jsonb)).id;
+  update usuario set perfil = 'registro_academico' where id = v_ura;
+
+  insert into documento (archivo_id, dependencia_id, anio, asunto_id, fecha_documento, origen, estado,
+                         tipo_comunicacion, consecutivo, remitente, destinatario, titulo)
+  values (pg_temp.nuevo_archivo(repeat('3', 64)), v_dep110, 2025, v_as110, '2025-02-28', 'documento_individual', 'clasificado',
+          'ENT', '0385', 'Gobernación Ficticia del Cauca', null, 'Invitación a mesa departamental'),
+         (pg_temp.nuevo_archivo(repeat('4', 64)), v_dep150, 2025, v_as150, '2025-03-10', 'documento_individual', 'clasificado',
+          'SAL', '12/2025', null, 'Persona Ficticia Uno', 'Certificado de prueba');
+
+  -- Árbol
+  r := fn_archivo_arbol(v_ac);
+  perform pg_temp.ok(exists (select 1 from jsonb_array_elements(r) n, jsonb_array_elements(n->'anios') y, jsonb_array_elements(y->'asuntos') a
+                              where (n->>'dependencia_id')::bigint = v_dep110 and (y->>'anio')::int = 2025
+                                and (a->>'asunto_id')::bigint = v_as110 and (a->>'total')::int >= 1),
+    'RF-AC-013: el árbol Dependencia → Año → Asunto cuenta los documentos clasificados');
+  perform pg_temp.ok(exists (select 1 from jsonb_array_elements(r) n where (n->>'total')::int = 0),
+    'RF-AC-013: las dependencias sin documentos también aparecen');
+  r := fn_archivo_arbol(v_udep);
+  perform pg_temp.ok(jsonb_array_length(r) = 1 and (r->0->>'dependencia_id')::bigint = v_dep150,
+    'RF-AC-013: Dependencia solo ve sus carpetas');
+  r := fn_archivo_arbol(v_ura);
+  perform pg_temp.ok((r->>'denegado')::boolean and exists (select 1 from auditoria where usuario_id = v_ura
+    and recurso_tipo = 'archivo' and resultado = 'denegado'), 'SGD-032: sin documentos.consultar no ve el árbol y queda auditado');
+
+  -- Búsqueda
+  r := fn_archivo_buscar(v_ac, '{"consecutivo":"385"}');
+  perform pg_temp.ok(r->'filas' @> '[{"origen":"documento","titulo":"Invitación a mesa departamental"}]'
+                     and r->'filas' @> '[{"origen":"comunicacion","consecutivo_original":"385"}]',
+    'RF-AC-014: "385" encuentra el documento y las comunicaciones con ese número');
+  r := fn_archivo_buscar(v_ac, '{"consecutivo":"385","dia":28,"mes":2,"alcance":"documentos"}');
+  perform pg_temp.ok((r->>'total')::int = 1, 'RF-AC-014: "385 del 28 de febrero" filtra también por la fecha');
+  r := fn_archivo_buscar(v_ac, '{"consecutivo":"385","dia":29,"mes":2,"alcance":"documentos"}');
+  perform pg_temp.ok((r->>'total')::int = 0, 'RF-AC-014: otra fecha no coincide');
+  r := fn_archivo_buscar(v_ac, '{"persona":"ficticia uno"}');
+  perform pg_temp.ok(r->'filas' @> '[{"titulo":"Certificado de prueba"}]', 'RF-AC-014: búsqueda por persona (destinatario)');
+  r := fn_archivo_buscar(v_ac, '{"persona":"remitente ficticio"}');
+  perform pg_temp.ok(r->'filas' @> '[{"origen":"comunicacion"}]', 'RF-AC-014: la búsqueda por persona incluye comunicaciones');
+  r := fn_archivo_buscar(v_udep, '{"persona":"gobernación ficticia"}');
+  perform pg_temp.ok((r->>'total')::int = 0, 'RF-AC-014: Dependencia no encuentra documentos de otra dependencia');
+  r := fn_archivo_buscar(v_ac, format('{"trd":"%s"}', v_trd110)::jsonb);
+  perform pg_temp.ok(r->'filas' @> '[{"titulo":"Invitación a mesa departamental"}]' and not (r->'incluye'->>'comunicaciones')::boolean,
+    'RF-AC-014: búsqueda por código TRD (solo documentos)');
+  r := fn_archivo_buscar(v_ac, '{"tipo":"salida","anio":2025,"alcance":"documentos"}');
+  perform pg_temp.ok(r->'filas' @> '[{"titulo":"Certificado de prueba"}]' and not r->'filas' @> '[{"titulo":"Invitación a mesa departamental"}]',
+    'RF-AC-014: filtro por tipo');
+  r := fn_archivo_buscar(v_ac, '{"anio":2025,"alcance":"documentos"}', 1, 1);
+  perform pg_temp.ok(jsonb_array_length(r->'filas') = 1 and (r->>'total')::int >= 2, 'RF-AC-014: resultados paginados');
+  r := fn_archivo_buscar(v_ac, '{"persona":"%"}');
+  perform pg_temp.ok((r->>'total')::int = 0, 'SGD-032: los comodines del usuario se buscan como texto');
+  r := fn_archivo_buscar(v_ura, '{"texto":"acta"}');
+  perform pg_temp.ok((r->>'denegado')::boolean, 'SGD-032: sin permisos de consulta la búsqueda se niega');
+  perform fn_set_usuario_actual(v_ac);   -- las funciones fijan el usuario que actúa: se restaura el de la sesión
+  perform pg_temp.debe_fallar($q$ select fn_archivo_buscar(fn_usuario_actual(), '{"tipo":"fax"}') $q$, 'Tipo no válido');
+end $$;
+
 -- ── Auditoría ────────────────────────────────────────────────────────────────
 do $$
 begin

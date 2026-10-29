@@ -39,6 +39,8 @@ const MIGRACIONES = [
   ["20261014000000_correo_enviado.sql",             ["tabla:correo_enviado", "rpc:n8n_registrar_correo_enviado"]],
   ["20261016000000_anular_documento.sql",          ["rpc:fn_anular_documento_usuario"]],
   ["20261017000000_catalogos_parametros_auditoria.sql", ["rpc:fn_catalogo_guardar", "rpc:fn_catalogo_importar", "rpc:fn_parametro_guardar", "rpc:fn_plantilla_guardar", "rpc:fn_auditoria_consultar"]],
+  ["20261019000000_historico_comunicaciones.sql",   ["rpc:fn_historico_importar", "rpc:fn_historico_calendario", "rpc:fn_historico_mes"]],
+  ["20261020000000_archivo_busqueda.sql",          ["rpc:fn_alcance_consulta", "rpc:fn_archivo_arbol", "rpc:fn_archivo_buscar"]],
   ["20261012000000_docx_formato_permitido.sql",     ["tabla:parametro"]],
 ];
 
@@ -70,6 +72,11 @@ const esperadas = ["acuse_recibo", "remision", "devolucion", "respuesta", "recor
 const tiene = new Set((plantillas.data ?? []).map(p => p.codigo));
 console.log(`plantilla_correo : ${plantillas.error ? "error: " + plantillas.error.message : `${tiene.size}/6`}${esperadas.filter(e => !tiene.has(e)).length ? "   faltan: " + esperadas.filter(e => !tiene.has(e)).join(", ") : ""}`);
 console.log(`parametro        : ${await conteo("parametro")} (esperado 9)`);
+// Migración de solo datos (SGD-090): no deja objetos en el catálogo, se revisa por contenido.
+const params = await sb.from("parametro").select("clave, descripcion");
+const conCodigos = (params.data ?? []).filter(x => /(RNF|RF|RN)-AC|P-\d+|mockup|tentativo/.test(x.descripcion ?? "")).map(x => x.clave);
+console.log(`  descripciones  : ${params.error ? "error: " + params.error.message : conCodigos.length ? `con códigos de requisitos (${conCodigos.join(", ")})` : "en lenguaje de usuario"}`);
+if (conCodigos.length) faltan.push("20261018000000_parametros_descripcion_usuario.sql");
 console.log(`permiso_perfil   : ${await conteo("permiso_perfil")} (esperado 30)`);
 console.log(`tipo_documental  : ${await conteo("tipo_documental")} (esperado ≥ 11)`);
 console.log(`dependencia      : ${await conteo("dependencia")}`);

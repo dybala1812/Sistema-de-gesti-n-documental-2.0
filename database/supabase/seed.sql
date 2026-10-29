@@ -5,15 +5,15 @@
 
 -- ── Parámetros (RF-AC-006) ──────────────────────────────────────────────────
 insert into parametro (clave, valor, tipo, descripcion, minimo, maximo) values
-  ('anios_minimos_transferencia',     '2',   'entero',  'RN-AC-03: años en archivo de gestión antes de transferir (año actual − N).', 0, 10),
-  ('tamano_maximo_archivo_mb',        '50',  'entero',  'RNF-AC-08: tamaño máximo por archivo en MB (tentativo).', 1, 500),
-  ('formatos_permitidos',             'pdf,jpg,jpeg,png,xlsx', 'lista', 'RNF-AC-08: extensiones aceptadas.', null, null),
-  ('plazo_respuesta_dias_habiles',    '5',   'entero',  'RF-AC-016: plazo por defecto de respuesta de las dependencias (tentativo; el mockup alerta a los 5 días).', 1, 60),
-  ('recordatorio_cada_dias_habiles',  '2',   'entero',  'RF-AC-018: no recordar la misma comunicación antes de N días hábiles.', 1, 30),
-  ('max_recordatorios_antes_escalar', '3',   'entero',  'RF-AC-018: tras N recordatorios se marca para escalar.', 1, 10),
-  ('umbral_confianza_ia',             '0.70','decimal', 'RF-AC-012: por debajo de este valor la sugerencia se muestra como baja confianza (tentativo).', 0, 1),
-  ('ia_habilitada',                   'false','booleano','RF-AC-012: activa la sugerencia con IA (P-13).', null, null),
-  ('buzon_archivo_central',           'correspondencia@uniautonoma.edu.co', 'texto', 'Buzón institucional que lee n8n (dato del mockup; confirmar).', null, null)
+  ('anios_minimos_transferencia',     '2',   'entero',  'Años que los documentos permanecen en la dependencia antes de poder transferirse al Archivo Central. Se transfiere hasta el año actual menos este número.', 0, 10),
+  ('tamano_maximo_archivo_mb',        '50',  'entero',  'Tamaño máximo de cada archivo que se sube, en megabytes (MB).', 1, 500),
+  ('formatos_permitidos',             'pdf,jpg,jpeg,png,xlsx', 'lista', 'Tipos de archivo que se pueden subir, escritos como extensiones separadas por coma (por ejemplo: pdf, docx, jpg).', null, null),
+  ('plazo_respuesta_dias_habiles',    '5',   'entero',  'Días hábiles que tiene una dependencia para responder una comunicación que se le remitió.', 1, 60),
+  ('recordatorio_cada_dias_habiles',  '2',   'entero',  'Días hábiles que deben pasar entre dos recordatorios de la misma comunicación.', 1, 30),
+  ('max_recordatorios_antes_escalar', '3',   'entero',  'Cantidad de recordatorios sin respuesta después de la cual la comunicación se marca para escalar.', 1, 10),
+  ('umbral_confianza_ia',             '0.70','decimal', 'Confianza mínima, de 0 a 1, para que una sugerencia de la inteligencia artificial se muestre como confiable. Por debajo se marca como de baja confianza.', 0, 1),
+  ('ia_habilitada',                   'false','booleano','Activa o desactiva las sugerencias de clasificación hechas con inteligencia artificial. Siempre requieren confirmación de una persona.', null, null),
+  ('buzon_archivo_central',           'correspondencia@uniautonoma.edu.co', 'texto', 'Correo institucional del que se leen las comunicaciones que llegan al Archivo Central.', null, null)
 on conflict (clave) do nothing;
 
 -- ── Plantillas de correo (RF-AC-006) ────────────────────────────────────────
