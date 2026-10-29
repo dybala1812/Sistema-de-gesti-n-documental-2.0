@@ -10,6 +10,12 @@ Seguridad: secretos, validaciones, permisos revisados
 Commit: hash o "ninguno"
 -->
 
+## 2026-10-29 — feature | Ubicación física con la misma distribución en todo Archivo Central (D-22)
+Cambio: NOVA_FT `pages/archivo-central/UbicacionFisica.tsx` (Caja + Carpeta, bloque opcional "Ubicación en bodega" con el catálogo de ubicaciones activas, `textoUbicacion`), usado en Carga de documento, Clasificar (Caja y Carpeta obligatorias), Detalle del documento, Clasificados, Archivo y Búsqueda; Nueva transferencia cambia el texto libre "Depósito 2 · Estante 4" por el selector opcional de bodega (la caja y la carpeta siguen en el FUID); detalle de transferencia y acta muestran "Ubicación en bodega". Backend: `POST /api/documentos` acepta `ubicacion_id`; `lib/clasificados.ts` devuelve `ubicacion` {id, bodega, estante, módulo}.
+Tests: tsc sin errores en archivos propios (los 28 que quedan son de código de NOVA, ya estaban); Vite compila los 10 módulos tocados; API: cargar con `ubicacion_id` → 201 con la bodega, clasificados trae `ubicacion` (documento de prueba anulado).
+Pendiente: `fn_archivo_buscar` (Archivo y Búsqueda) no devuelve la bodega todavía, solo caja y carpeta; P-08 sigue abierta con el cliente.
+Commit: ver ramas feature/ubicacion-fisica-unificada.
+
 ## 2026-10-27 — docs | F-05 plan de pruebas para el verificador
 Cambio: se armó ia_contexto/spec/acceptance-tests/F-05_plan_pruebas.md con el alcance del backlog ya hecho o en revisión (catálogos, parámetros, plantillas, auditoría, carga A, transferencia física, visor, comunicaciones F1–F3 y anulación). Incluye lo que no se prueba aún (lotes, transferencia digital, clasificar persistente, IA, búsqueda, F4, histórico Excel, historias, PWA), los bugs SGD-087 a 090 y una hoja de resultados. trazabilidad.md apunta a ese F-05.
 Tests: no aplica (solo documentación).

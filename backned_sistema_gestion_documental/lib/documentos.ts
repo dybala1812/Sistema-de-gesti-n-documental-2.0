@@ -42,6 +42,8 @@ export interface DatosNuevoDocumento {
   fecha?: string;
   caja?: string;
   carpeta?: string;
+  /** Bodega · estante · módulo del catálogo de ubicaciones físicas (opcional). */
+  ubicacion_id?: number;
 }
 
 async function auditar(usuarioId: number | null, accion: string, documentoId: number, valores: Record<string, unknown>) {
@@ -107,6 +109,7 @@ export async function crearDocumentoIndividual(
       fecha_documento: datos.fecha ?? null,
       caja: datos.caja?.trim() || null,
       carpeta: datos.carpeta?.trim() || null,
+      ubicacion_id: datos.ubicacion_id ?? null,
       estado: completo ? "clasificado" : "por_clasificar",
       origen: "documento_individual",
       cargado_por: uid,
