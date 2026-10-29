@@ -25,6 +25,31 @@ Cambio: el usuario dejó como regla el contrato de errores JSON (número + motiv
 Tests: no aplica (solo documentación).
 Commit: ninguno.
 
+## 2026-10-28 — docs | F-05 v1.1, menú lateral, píldoras de cargas y paginación
+Cambio: plan F-05 v1.1 con cómo entrar por el login temporal (perfiles, clave entregada en privado, bloqueo, cambio de perfil) y casos nuevos de permisos por perfil, archivo, búsqueda, histórico, paginación y pantalla; defectos 087–090 pasan a "comprobar que ya no pasan". Frontend: menú lateral de Archivo Central sin barra de desplazamiento (tamaño según el alto de la pantalla) y con el fondo del Panel de Área de NOVA; tipos de carga como píldoras en una línea; paginación en Por clasificar, Clasificados (20) y Últimos lotes (10) con el componente Paginacion.
+Tests: revisado en el navegador a 1366×768, 1440×900 y 1920×1000; tsc frontend 28 (línea base).
+Pendiente: la paginación corta en el navegador hasta 200 documentos que entrega el backend; paginar en el servidor con SGD-020.
+
+## 2026-10-28 — SGD-032 en revisión | Archivo navegable y búsqueda avanzada
+Cambio: migración 20 (árbol con contadores, búsqueda en documentos y comunicaciones con permisos y límite por dependencia); APIs /api/archivo/arbol y /api/archivo/buscar; Archivo con datos reales y paginación; pantalla Buscar habilitada; ComunicacionesArea puede abrir una comunicación por id. /api/clasificados y /api/documentos exigen permiso y limitan Dependencia a lo suyo.
+Tests: probar_local.sh todo correcto (16 nuevas); npm test 21/21; tsc backend 0; tsc frontend 28 (línea base); en vivo con el login temporal por perfil.
+Seguridad: se cerró que cualquier usuario autenticado listara todos los documentos; intentos sin permiso auditados; los comodines de búsqueda del usuario se tratan como texto.
+Pendiente: aplicar en Supabase las migraciones 16, 18, 19 y 20.
+Commit: ninguno (pendiente de revisión).
+
+## 2026-10-28 — decisión | Login temporal de pruebas por perfil y cierre de exposiciones
+Cambio: login de pruebas en /login-temporal (botón "Login 2"): el usuario elige perfil (Archivo Central, Administrador, Dependencia con su dependencia, Registro Académico, Secretaría General) y la clave que vive solo en el backend; el backend crea los usuarios ficticios @prueba.sgd.test y entrega un token firmado de 8 horas que auth.ts acepta solo en desarrollo. Reemplaza el atajo DEV_BYPASS_AUTH + VITE_SGD_DEV_TOKEN. Remitir y enviar respuesta pasan por el backend (/enviar-remision, /enviar-respuesta) en vez de llamar a n8n desde el navegador. A pedido del usuario, con el login temporal activo la barra de NOVA oculta "Registrarse". Retiro antes del despliegue: SGD-091 e ia_contexto/login-temporal.md.
+Tests: tsc backend 0; npm test 14/14; tsc frontend 28 (línea base); vite build OK; backend en vivo: login por perfil, 401 con clave mala o token alterado, 429 tras 5 intentos, 403 según perfil (auditoría, parámetros, catálogos) y 200 donde corresponde; navegador: página, ingreso, sesión en el módulo, salir y barra de navegación.
+Seguridad: el build de producción anterior llevaba incrustados el token de desarrollo (archivoCentralApi.ts) y el token de n8n (comunicacionesApi.ts); el nuevo build no contiene ningún secreto ni código del login temporal (revisado buscando los valores en NOVA_FT/dist). Ningún valor estuvo en Git. SGD_DEV_TOKEN rotado; falta rotar N8N_SERVICE_TOKEN en el backend y en n8n.
+Commit: ninguno (pendiente de revisión).
+
+## 2026-10-27 — SGD-090 y SGD-044 en revisión | Conjunto 3: parámetros en lenguaje de usuario y registro histórico
+Cambio: migración 18 (descripciones de parámetros sin códigos de requisitos) y migración 19 (importación idempotente del Excel histórico, calendario y lista por mes, con permisos y auditoría). Backend lib/historico.ts y rutas /api/comunicaciones/historico, /mes e /importar; rpc de lib/catalogos.ts exportado para reutilizarlo. Frontend: pantalla Registro histórico (antes un aviso "en construcción") y asistente Importar Excel con mapeo de columnas y vista previa. Además, a pedido del usuario: Catálogos › Dependencias ya no muestra ni acepta "Dependencia superior" (la columna sigue en la base).
+Tests: probar_local.sh todo correcto (20 pruebas nuevas); tsc backend 0; lint 0 errores; npm test 14/14; npm run build OK; tsc frontend 28 (línea base); navegador: títulos de parámetros, lectura y mapeo de un CSV ficticio, mensajes de error; backend en vivo: 400 con campo, 401 y 1002.
+Seguridad: importar exige cargas.historico y consultar comunicaciones.consultar, revisados en la base y auditados si se niegan; Dependencia solo ve el histórico de su dependencia; el Excel se lee en el navegador y solo viajan las columnas mapeadas; errores por fila sin texto interno de PostgreSQL.
+Pendiente: aplicar en Supabase las migraciones 16, 18 y 19; confirmar I-18 e I-19 con el cliente.
+Commit: ninguno (pendiente de revisión).
+
 ## 2026-10-27 — SGD-087, 088, 089 y 004 en revisión | Conjunto 2: bugs de catálogos, filas clicables, contrato de errores y skills
 Cambio: contrato de errores RN-AC-15 en lib/errors.ts (catálogo de números de sistema 1000-1011, errorFormulario/errorSistema, columna real del duplicado, n8n caído = 1004) aplicado en n8n.ts, catalogos.ts, anular, responder-directo y transferencias; frontend lee el contrato (sgdApi.mensajeErrorSgd, archivoCentralApi). Filas clicables y con teclado en Por clasificar, Clasificados y Archivo. Registros de prueba de SGD-087 inactivados con motivo. Skills con los comandos y la estructura reales; npm test en el backend.
 Tests: npm test 14/14; probar_local.sh todo correcto (prueba nueva: la validación fallida no consume consecutivo); tsc backend 0; npm run build backend OK; tsc frontend 28 (línea base); vite build OK; navegador: filas de las tres pantallas; backend en vivo: 409 duplicado con campo, 401, 404, 400 y 1002.
