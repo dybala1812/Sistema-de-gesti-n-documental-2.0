@@ -67,11 +67,21 @@ Formato:
 ## Antes de subir
 
 ```bash
-cd {{DIR_APP}}
-{{CMD_LINT}}
-{{CMD_TEST}}
-{{CMD_BUILD}}
+# Backend — desde backned_sistema_gestion_documental/
+npx tsc --noEmit -p .       # tipos: 0 errores
+npm run lint                # ESLint: 0 errores
+npm test                    # pruebas unitarias (node --test "tests/**/*.test.mjs")
+npm run build               # build de producción (Next.js)
+
+# Base de datos — desde la raíz, en Git Bash (requiere PostgreSQL 18 local)
+bash database/scripts/probar_local.sh   # migraciones en BD temporal + pruebas_reglas.sql + concurrencia de consecutivos
+
+# Frontend — desde NOVA_FT/ (no tiene tests ni linter)
+npm run typecheck           # línea base: 28 errores, todos en código original de NOVA; no agregar nuevos
+npx vite build              # build (npm run build corre tsc primero y se detiene por la línea base de NOVA)
 ```
+
+Solo se corre lo de la parte que se tocó. Si `npx` falla por los espacios de la ruta: `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json` y `node node_modules/vite/bin/vite.js build`.
 
 - Si alguno falla, no se sube como evidencia de tarea terminada.
 - Revisar `git status` y `git diff --staged`: nada de `.env`, credenciales, `node_modules/`, builds ni archivos personales.

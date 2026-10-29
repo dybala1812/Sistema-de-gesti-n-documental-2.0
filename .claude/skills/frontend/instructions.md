@@ -27,9 +27,9 @@ React + TypeScript + Vite + Tailwind v4 + shadcn/ui (frontend NOVA_FT); Supabase
 ## Validación
 
 ```bash
-cd {{DIR_APP}}
-{{CMD_LINT}}
-{{CMD_BUILD}}
+cd NOVA_FT
+npm run typecheck   # sin errores nuevos sobre la línea base de 28 (código original de NOVA)
+npx vite build
 ```
 
 Para cambios visuales, revisar manualmente desktop y móvil.

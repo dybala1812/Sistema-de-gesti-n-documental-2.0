@@ -49,6 +49,13 @@ export async function GET(
         tipo: err.tipo,
       });
     }
+    // El registro existe en la base pero el binario no está en la carpeta de este servidor
+    // (p. ej. se subió desde otro equipo). 404 claro y sin exponer la ruta absoluta del disco.
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+      return errorResponse("El archivo no está en el almacenamiento de este servidor", 404, {
+        detalle: "Está registrado, pero su copia no se encuentra en la carpeta de archivos (pudo subirse desde otro equipo o haberse movido).",
+      });
+    }
     return handleError(err);
   }
 }

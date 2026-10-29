@@ -37,6 +37,8 @@ const MIGRACIONES = [
   ["20261010000000_mejorar_feedback_errores_respuesta.sql", ["rpc:fn_responder_remitente", "rpc:n8n_responder"]],
   ["20261011000000_f4_manual_y_correo_adicional.sql", ["rpc:n8n_registrar_correo_adicional", "rpc:fn_responder_directo"]],
   ["20261014000000_correo_enviado.sql",             ["tabla:correo_enviado", "rpc:n8n_registrar_correo_enviado"]],
+  ["20261016000000_anular_documento.sql",          ["rpc:fn_anular_documento_usuario"]],
+  ["20261017000000_catalogos_parametros_auditoria.sql", ["rpc:fn_catalogo_guardar", "rpc:fn_catalogo_importar", "rpc:fn_parametro_guardar", "rpc:fn_plantilla_guardar", "rpc:fn_auditoria_consultar"]],
   ["20261012000000_docx_formato_permitido.sql",     ["tabla:parametro"]],
 ];
 

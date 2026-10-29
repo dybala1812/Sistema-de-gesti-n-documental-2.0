@@ -8,22 +8,34 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 
 ## Estado actual
 
-Frontend `NOVA_FT/`: sin framework de tests ni linter configurado; solo `npm run typecheck` y `npm run build`. Backend: aún no existe (P-11). Configurarlo es parte de SGD-004/SGD-008.
+- **Backend**: pruebas unitarias con `node --test` en `tests/` (`npm test`; Node 24 importa los `.ts` de `lib/` sin compilar), tipos con `tsc` y ESLint.
+- **Base de datos**: `database/supabase/tests/pruebas_reglas.sql` prueba las reglas RN/RF en SQL; `probar_local.sh` aplica todas las migraciones en un PostgreSQL temporal, corre esas pruebas, revierte y mide la concurrencia de consecutivos (40 sesiones).
+- **Frontend** `NOVA_FT/`: sin framework de tests ni linter; `npm run typecheck` (línea base 28 errores de NOVA) y `npx vite build`, más la verificación en el navegador.
 
 ## Verificación mínima obligatoria
 
 ```bash
-cd {{DIR_APP}}
-{{CMD_LINT}}
-{{CMD_TEST}}
-{{CMD_BUILD}}
+# Backend — desde backned_sistema_gestion_documental/
+npx tsc --noEmit -p .       # tipos: 0 errores
+npm run lint                # ESLint: 0 errores
+npm test                    # pruebas unitarias (node --test "tests/**/*.test.mjs")
+npm run build               # build de producción (Next.js)
+
+# Base de datos — desde la raíz, en Git Bash (requiere PostgreSQL 18 local)
+bash database/scripts/probar_local.sh   # migraciones en BD temporal + pruebas_reglas.sql + concurrencia de consecutivos
+
+# Frontend — desde NOVA_FT/ (no tiene tests ni linter)
+npm run typecheck           # línea base: 28 errores, todos en código original de NOVA; no agregar nuevos
+npx vite build              # build (npm run build corre tsc primero y se detiene por la línea base de NOVA)
 ```
 
-Resultado esperado: los tres sin errores. Sin ejecución real no hay verificación.
+Solo se corre lo de la parte que se tocó. Si `npx` falla por los espacios de la ruta: `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json` y `node node_modules/vite/bin/vite.js build`.
+
+Resultado esperado: todo sin errores (frontend: sin errores nuevos sobre la línea base). Sin ejecución real no hay verificación.
 
 ## Verificación adicional
 
-- Revisar manualmente la ruta o pantalla modificada con `{{CMD_DEV}}`.
+- Revisar manualmente la ruta o pantalla modificada con `npm run dev` del backend (http://localhost:3000) y del frontend (http://localhost:5173); o las configuraciones `sgd-backend` y `nova-frontend` de `.claude/launch.json`.
 - Sin errores en la consola del navegador / en el log del dispositivo.
 - Web: probar en un ancho de móvil (~375 px) y en desktop.
 - Móvil: probar en emulador o dispositivo <!-- COMPLETAR: cuáles -->.

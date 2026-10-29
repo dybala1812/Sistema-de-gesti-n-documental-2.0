@@ -1,7 +1,7 @@
 # Matriz de trazabilidad — SGD · Módulo Archivo Central
 
-Fuente: F-02 v1.1 §8. Se inicia aquí y se cierra en el documento de pruebas (**F-05**).
-Completar "Tarea" y "Resultado" a medida que se implementa y se prueba.
+Fuente: F-02 v1.1 §8. Se inicia aquí y se cierra en el documento de pruebas (**F-05**): `ia_contexto/spec/acceptance-tests/F-05_plan_pruebas.md` (ronda 2026-10-27: solo lo implementado).
+Completar "Tarea" y "Resultado" cuando el verificador devuelva la hoja del F-05.
 
 | RF | HU | Pts | Sprint | Componente | Caso de prueba | Tarea | Resultado |
 |---|---|---|---|---|---|---|---|

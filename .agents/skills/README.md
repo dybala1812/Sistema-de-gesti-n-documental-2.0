@@ -35,7 +35,7 @@ Plataforma: Web responsive (React) + PWA móvil para escaneo · Stack: React + T
 
 - Leer `context/project-context.md` y `architecture/rules.md` antes de tocar código.
 - Diseñar y revisar la UI con `frontend/` + `ux-heuristicas`.
-- Validar con `{{CMD_LINT}}`, `{{CMD_TEST}}` y `{{CMD_BUILD}}` desde `{{DIR_APP}}`.
+- Validar con los comandos de `testing/SKILL.md` (backend, base de datos y frontend).
 - No agregar dependencias, frameworks ni backend sin una decisión explícita registrada en `memory/`.
 
 ## Mantenimiento

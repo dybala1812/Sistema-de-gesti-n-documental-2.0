@@ -10,6 +10,40 @@ Seguridad: secretos, validaciones, permisos revisados
 Commit: hash o "ninguno"
 -->
 
+## 2026-10-27 — docs | F-05 plan de pruebas para el verificador
+Cambio: se armó ia_contexto/spec/acceptance-tests/F-05_plan_pruebas.md con el alcance del backlog ya hecho o en revisión (catálogos, parámetros, plantillas, auditoría, carga A, transferencia física, visor, comunicaciones F1–F3 y anulación). Incluye lo que no se prueba aún (lotes, transferencia digital, clasificar persistente, IA, búsqueda, F4, histórico Excel, historias, PWA), los bugs SGD-087 a 090 y una hoja de resultados. trazabilidad.md apunta a ese F-05.
+Tests: no aplica (solo documentación).
+Commit: ninguno.
+
+## 2026-10-27 — bug | SGD-090 en por realizar (textos de Parámetros)
+Cambio: en Catálogos › Parámetros el administrador ve códigos de requisitos (RNF-AC, RF-AC, RN-AC, P-13) porque vienen en parametro.descripcion del seed. El usuario pidió que cada ítem tenga solo una explicación de qué es, sin esa jerga. Quedó como SGD-090; no se cambió código.
+Tests: no aplica (solo documentación).
+Commit: ninguno.
+
+## 2026-10-27 — decisión | D-21 y bugs SGD-087 a SGD-089 en por realizar
+Cambio: el usuario dejó como regla el contrato de errores JSON (número + motivo; consecutivo solo en error de sistema; formulario = descripción). Quedó como D-21, RN-AC-15 y sección en architecture.md. En tareas-por-realizar.md se documentaron tres bugs: SGD-087 (crear a mano en Catálogos), SGD-088 (clic en toda la fila/tarjeta para ver el documento en Por clasificar, Clasificados y Archivo) y SGD-089 (implementar el contrato de errores).
+Tests: no aplica (solo documentación).
+Commit: ninguno.
+
+## 2026-10-27 — SGD-087, 088, 089 y 004 en revisión | Conjunto 2: bugs de catálogos, filas clicables, contrato de errores y skills
+Cambio: contrato de errores RN-AC-15 en lib/errors.ts (catálogo de números de sistema 1000-1011, errorFormulario/errorSistema, columna real del duplicado, n8n caído = 1004) aplicado en n8n.ts, catalogos.ts, anular, responder-directo y transferencias; frontend lee el contrato (sgdApi.mensajeErrorSgd, archivoCentralApi). Filas clicables y con teclado en Por clasificar, Clasificados y Archivo. Registros de prueba de SGD-087 inactivados con motivo. Skills con los comandos y la estructura reales; npm test en el backend.
+Tests: npm test 14/14; probar_local.sh todo correcto (prueba nueva: la validación fallida no consume consecutivo); tsc backend 0; npm run build backend OK; tsc frontend 28 (línea base); vite build OK; navegador: filas de las tres pantallas; backend en vivo: 409 duplicado con campo, 401, 404, 400 y 1002.
+Seguridad: los errores ya no devuelven el detalle de PostgreSQL ni rutas de archivos; el detalle técnico solo sale fuera de producción. Aviso de Next.js 16.4.0 con una vulnerabilidad conocida (pendiente decidir la actualización).
+Pendiente: aplicar en Supabase las migraciones 16 y 17.
+Commit: ver git log (subido por pull request).
+
+## 2026-10-27 — SGD-005, 010, 011 y 012 en revisión | Conjunto 1: catálogos, parámetros, plantillas y auditoría
+Cambio: migración 17 (fn_catalogo_guardar, fn_catalogo_estado, fn_catalogo_importar, fn_parametro_guardar, fn_plantilla_guardar, fn_auditoria_consultar; el trigger de auditoría guarda el motivo y el id de parámetros y plantillas). Backend: lib/catalogos.ts escribe por esas funciones con el usuario real, filtros en lista blanca y listado de usuarios sin datos personales innecesarios; rutas nuevas /api/catalogos/{tabla}/importar, /api/parametros, /api/plantillas y /api/auditoria; /api/transferencias/resumen exige token. Frontend: Importar Excel con vista previa, inactivar con motivo, pestaña Parámetros, pantallas Plantillas de correo y Auditoría en el menú; sgdApi adjunta campo y tipo al error para marcar el campo del formulario.
+Tests: probar_local.sh — todas las migraciones y pruebas pasan (22 nuevas); tsc del backend 0 errores; tsc del frontend 28 (línea base de NOVA, se corrigieron los 2 de CatalogosArea); vite build OK; navegador: catálogos, parámetros, plantillas, auditoría e importación (lectura del Excel); backend: 403 sin permiso, 401 sin token, aviso de migración pendiente.
+Seguridad: permisos revisados en la base y auditados cuando se niegan; sin columnas arbitrarias en filtros ni escrituras; el listado de usuarios ya no devuelve cédula, teléfono ni datos de NOVA.
+Pendiente: aplicar en Supabase las migraciones 16 y 17.
+Commit: ninguno (pendiente de revisión).
+
+## 2026-10-27 — decisión | Tablero ordenado con lo ya realizado
+Cambio: se revisó cada tarea del backlog contra el repositorio, las pruebas y n8n. A tareas-en-revision.md pasaron SGD-008, 021, 022, 040, 041 y 042 (implementadas y subidas) y se actualizaron SGD-007 y 080; se agregaron SGD-081 a 086 por trabajo hecho fuera del tablero. A tareas-por-realizar.md pasaron SGD-004, 005, 010, 020, 030, 043 y 044, con su avance y lo que falta. En tareas-faltantes.md quedan las 14 que no se han empezado, con notas donde hay algo adelantado. Ninguna se pasó a tareas-hechas.md: ninguna cumple todavía la definición de terminado (pull request revisado por el compañero, prueba automática y Swagger).
+Tests: no aplica (solo documentación).
+Commit: ninguno.
+
 ## 2026-10-12 — fix | Se perdía el texto cuando la dependencia respondía más de una vez
 Cambio: n8n_registrar_respuesta_dependencia (migración 09) ponía cada respuesta sobre el último evento «respuesta_dependencia»; con una segunda respuesta (otro correo de la dependencia) el estado ya no cambiaba, no se creaba evento, el adjunto se colgaba del primero y el texto se perdía (caso real: ENT-2026-000029, evento 95 con 2 adjuntos y un solo texto). Migración 15: cada correo de respuesta es su propio evento (con estado_anterior = estado_nuevo y detalle.respuesta_adicional = true si ya estaba respondida), con su remitente, texto y adjuntos; idempotente por Message-ID. No cambia el contrato del backend ni de n8n.
 Tests: probar_local.sh pasa con las 17 migraciones (5 pruebas nuevas; las existentes de respuesta/devolución siguen pasando).

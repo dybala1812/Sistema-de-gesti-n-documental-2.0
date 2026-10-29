@@ -18,6 +18,7 @@ Fuente: `ia_contexto/fuentes/F-02_Archivo_Central_v1.1.docx` §6 (v1.1, 2026-10-
 | RN-AC-12 | **No hay borrado físico** desde el sistema: solo anulación con motivo y auditoría. | RF-AC-001–005, 023, 024 | Sin endpoints DELETE para entidades de negocio; estado `anulado`/`inactivo`; auditoría append-only. |
 | RN-AC-13 | La **IA nunca clasifica sola** y **no se aplica a historias académicas**. | RF-AC-010, 012, 020 | La sugerencia se guarda aparte; solo una acción humana escribe la clasificación. |
 | RN-AC-14 | Los archivos se **guardan localmente en carpetas**; la BD (Supabase) registra cada archivo con un **id** que lo referencia (más ruta relativa, hash y metadatos). | RF-AC-008 | Tabla `archivo`; `documento.archivo_id` / `adjunto.archivo_id`; nombre en disco = id; nunca binarios en la BD ni en Supabase Storage. |
+| RN-AC-15 | Toda respuesta de error de la API es **JSON**. Error de **sistema**: `{ "error": "<número>", "motivo": "<por qué>" }` y, **solo** si el fallo es de sistema (p. ej. función atómica de consecutivos), se puede incluir `consecutivo`. Error de **formulario**: `{ "error": "<descripción>", "campo"?: "…" }` — sin número de error de sistema y **sin** consecutivo. Un fallo de validación **no consume** consecutivo (RN-AC-08). | Transversal, RN-AC-08 | `lib/errors.ts`; catálogo de números de error de sistema; el frontend muestra `motivo` o `error` sin sustituirlo por un texto genérico de HTTP. |
 
 ## Transiciones válidas de una comunicación
 

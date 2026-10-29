@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase"; // AJUSTA: nombre/ruta real de tu cliente de Supabase
+import { errorFormulario, errorSistema } from "@/lib/errors";
 // import { requireUser } from "@/lib/auth"; // AJUSTA
 
 // Next 15: params es una promesa. Si tienes Next 14, usa ctx: { params: { id: string } } y quita el await.
@@ -26,7 +27,7 @@ export async function GET(_req: Request, ctx: Ctx) {
   try {
     // const user = await requireUser(_req);
     const id = Number((await ctx.params).id);
-    if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ mensaje: "Id no válido" }, { status: 400 });
+    if (!Number.isInteger(id) || id <= 0) return errorFormulario("Id no válido", 400);
 
     const { data: t, error } = await supabase
       .from("transferencia")
@@ -39,7 +40,7 @@ export async function GET(_req: Request, ctx: Ctx) {
       `)
       .eq("id", id).maybeSingle();
     if (error) throw error;
-    if (!t) return NextResponse.json({ mensaje: "No existe la transferencia" }, { status: 404 });
+    if (!t) return errorFormulario("No existe la transferencia", 404);
 
     const { data: items, error: e2 } = await supabase
       .from("inventario_item").select("*").eq("transferencia_id", id)
@@ -70,6 +71,6 @@ export async function GET(_req: Request, ctx: Ctx) {
     });
   } catch (e) {
     console.error("GET /api/transferencias/[id]", e);
-    return NextResponse.json({ mensaje: "No se pudo cargar la transferencia" }, { status: 500 });
+    return errorSistema("INTERNO", 500, { detalle: "no se pudo cargar la transferencia" });
   }
 }

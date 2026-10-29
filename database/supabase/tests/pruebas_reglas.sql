@@ -159,6 +159,14 @@ begin
   select consecutivo into c from fn_siguiente_consecutivo('INT', 2091);
   perform pg_temp.ok(a = 'INT-2090-000001' and b = 'INT-2090-000002', 'RN-AC-08: consecutivos secuenciales por tipo y año');
   perform pg_temp.ok(c = 'INT-2091-000001', 'RN-AC-08: el consecutivo reinicia cada año');
+
+  -- RN-AC-15 / SGD-089: un registro que falla la validación no consume consecutivo
+  -- (el contador se incrementa en la misma transacción y se revierte con el error).
+  perform pg_temp.debe_fallar($q$ insert into comunicacion (tipo, origen, anio, asunto) values ('INT', 'manual', 2093, null) $q$, 'asunto');
+  perform pg_temp.debe_fallar($q$ insert into comunicacion (tipo, origen, anio, asunto) values ('SAL', 'manual', 2093, 'Salida sin entrada') $q$, 'comunicacion_salida_enlazada');
+  select consecutivo into a from fn_siguiente_consecutivo('INT', 2093);
+  select consecutivo into b from fn_siguiente_consecutivo('SAL', 2093);
+  perform pg_temp.ok(a = 'INT-2093-000001' and b = 'SAL-2093-000001', 'RN-AC-15: la validación fallida no consume consecutivo');
 end $$;
 
 -- ── Circuito de comunicaciones ──────────────────────────────────────────────
@@ -492,6 +500,124 @@ begin
   perform n8n_registrar_respuesta_dependencia(e.id, 'persona2@uniautonoma.edu.co', 'RE: 2', 'Segunda respuesta', '<r2-15@mail>', now()::text, array[a2], '[]');
   perform pg_temp.ok((select count(*) from comunicacion_evento where comunicacion_id = e.id and tipo = 'respuesta_dependencia') = 2,
                      'varias respuestas: reintento del mismo correo no duplica');
+end $$;
+
+-- ── Migración 16: anular documento desde el backend ─────────────────────────
+do $$
+declare
+  v_user bigint := fn_usuario_actual();
+  v_dep bigint := (select id from dependencia where codigo = '150');
+  v_doc bigint;
+begin
+  insert into documento (archivo_id, dependencia_id, anio, origen)
+  values (pg_temp.nuevo_archivo(repeat('d', 63) || '6'), v_dep, 2024, 'documento_individual')
+  returning id into v_doc;
+  perform pg_temp.debe_fallar(format($q$ select fn_anular_documento_usuario(%s, %s, '  ') $q$, v_user, v_doc), '[campo:motivo|tipo:obligatorio]');
+  perform pg_temp.debe_fallar(format($q$ select fn_anular_documento_usuario(%s, 987654, 'x') $q$, v_user), '[campo:id|tipo:existente]');
+  perform pg_temp.debe_fallar(format($q$ select fn_anular_documento_usuario(987654, %s, 'x') $q$, v_doc), 'El usuario 987654 no existe');
+  perform fn_anular_documento_usuario(v_user, v_doc, '  Cargado en la dependencia equivocada ');
+  perform pg_temp.ok((select estado = 'anulado' and anulado_motivo = 'Cargado en la dependencia equivocada' and anulado_por = v_user and anulado_en is not null
+                        from documento where id = v_doc), 'fn_anular_documento_usuario: anula con motivo, usuario y fecha (sin borrar)');
+  perform pg_temp.ok(exists (select 1 from auditoria where recurso_tipo = 'documento' and recurso_id = v_doc::text and accion = 'anular' and usuario_id = v_user),
+                     'fn_anular_documento_usuario: la anulación queda auditada con el usuario');
+  perform pg_temp.debe_fallar(format($q$ select fn_anular_documento_usuario(%s, %s, 'otra vez') $q$, v_user, v_doc), 'ya está anulado');
+  perform fn_set_usuario_actual(v_user);   -- restaura el usuario de la sesión de pruebas
+end $$;
+
+-- ── Migración 17: catálogos, parámetros, plantillas y auditoría ─────────────
+do $$
+declare
+  v_ac bigint := fn_usuario_actual();   -- Archivo Central (sesión de pruebas)
+  v_adm bigint;
+  v_dep bigint;
+  r jsonb;
+  v_id bigint;
+  v_clave text;
+begin
+  v_adm := (fn_sincronizar_usuario_nova('{"id":"66666666-6666-6666-6666-666666666666","email":"admin.sgd@uniautonoma.edu.co","nombre":"Admin","apellido":"Prueba"}'::jsonb)).id;
+  update usuario set perfil = 'administrador' where id = v_adm;
+  v_dep := (fn_sincronizar_usuario_nova('{"id":"77777777-7777-7777-7777-777777777777","email":"dep.sgd@uniautonoma.edu.co","nombre":"Dep","apellido":"Prueba"}'::jsonb)).id;
+  update usuario set perfil = 'dependencia', dependencia_id = (select id from dependencia where codigo = '150') where id = v_dep;
+
+  -- Crear y editar con el usuario real en la auditoría
+  r := fn_catalogo_guardar(v_ac, 'tipo_documental', null, '{"nombre":"Acuerdo de prueba"}');
+  v_id := (r->>'id')::bigint;
+  perform pg_temp.ok(r->>'nombre' = 'Acuerdo de prueba', 'catálogo: Archivo Central crea un tipo documental');
+  perform pg_temp.ok(exists (select 1 from auditoria where recurso_tipo = 'tipo_documental' and recurso_id = v_id::text and accion = 'crear' and usuario_id = v_ac),
+                     'catálogo: la creación queda auditada con el usuario que actuó');
+  r := fn_catalogo_guardar(v_ac, 'tipo_documental', v_id, '{"nombre":"Acuerdo de prueba editado"}');
+  perform pg_temp.ok(r->>'nombre' = 'Acuerdo de prueba editado', 'catálogo: edición');
+  perform pg_temp.debe_fallar(format($q$ select fn_catalogo_guardar(%s, 'tipo_documental', null, '{"nombre":"acuerdo de prueba editado"}') $q$, v_ac), 'duplicate key');
+  perform pg_temp.debe_fallar(format($q$ select fn_catalogo_guardar(%s, 'tipo_documental', %s, '{"estado":"inactivo"}') $q$, v_ac, v_id), '[campo:estado|tipo:no_editable]');
+  perform pg_temp.debe_fallar(format($q$ select fn_catalogo_guardar(%s, 'documento', null, '{"titulo":"x"}') $q$, v_ac), 'Catálogo no soportado');
+
+  -- Permisos: Dependencia no gestiona catálogos; Archivo Central no gestiona usuarios ni parámetros
+  r := fn_catalogo_guardar(v_dep, 'tipo_documental', null, '{"nombre":"No debería"}');
+  perform pg_temp.ok((r->>'denegado')::boolean and not exists (select 1 from tipo_documental where nombre = 'No debería'),
+                     'catálogo: sin permiso no escribe y responde denegado');
+  perform pg_temp.ok(exists (select 1 from auditoria where usuario_id = v_dep and resultado = 'denegado' and recurso_tipo = 'tipo_documental'),
+                     'catálogo: el intento denegado queda en la auditoría');
+  r := fn_catalogo_guardar(v_ac, 'usuario', v_dep, '{"perfil":"administrador"}');
+  perform pg_temp.ok((r->>'denegado')::boolean, 'usuarios: Archivo Central no puede cambiar perfiles');
+  r := fn_catalogo_guardar(v_adm, 'usuario', v_dep, '{"perfil":"secretaria_general"}');
+  perform pg_temp.ok(r->>'perfil' = 'secretaria_general', 'usuarios: el Administrador asigna el perfil');
+  perform pg_temp.debe_fallar(format($q$ select fn_catalogo_guardar(%s, 'usuario', null, '{"perfil":"dependencia"}') $q$, v_adm), 'llegan desde NOVA');
+  perform pg_temp.debe_fallar(format($q$ select fn_catalogo_guardar(%s, 'usuario', %s, '{"email":"x@y.co"}') $q$, v_adm, v_dep), 'no se puede editar');
+
+  -- Inactivar exige motivo y lo guarda en la auditoría
+  perform pg_temp.debe_fallar(format($q$ select fn_catalogo_estado(%s, 'tipo_documental', %s, 'inactivo', ' ') $q$, v_ac, v_id), '[campo:motivo|tipo:obligatorio]');
+  r := fn_catalogo_estado(v_ac, 'tipo_documental', v_id, 'inactivo', 'Ya no se usa');
+  perform pg_temp.ok(r->>'estado' = 'inactivo' and exists (select 1 from tipo_documental where id = v_id), 'catálogo: inactivar no borra');
+  perform pg_temp.ok(exists (select 1 from auditoria where recurso_tipo = 'tipo_documental' and recurso_id = v_id::text and accion = 'inactivar'
+                             and detalle->>'motivo' = 'Ya no se usa' and usuario_id = v_ac), 'catálogo: el motivo queda en la auditoría');
+  r := fn_catalogo_estado(v_ac, 'tipo_documental', v_id, 'activo');
+  perform pg_temp.ok(r->>'estado' = 'activo', 'catálogo: activar no pide motivo');
+
+  -- Importar: la vista previa no escribe; confirmar inserta las válidas y omite las erróneas
+  r := fn_catalogo_importar(v_ac, 'dependencia', format('[
+      {"codigo":"901","nombre":"Dependencia Importada A","correo_oficial":"imp.a@uniautonoma.edu.co"},
+      {"codigo":"901","nombre":"Repetida en el archivo","correo_oficial":"imp.b@uniautonoma.edu.co"},
+      {"codigo":"902","nombre":"Con superior","correo_oficial":"imp.c@uniautonoma.edu.co","dependencia_padre_codigo":"901"},
+      {"codigo":"903","nombre":"Superior inexistente","correo_oficial":"imp.d@uniautonoma.edu.co","dependencia_padre_codigo":"999"},
+      {"codigo":"904","nombre":"Correo de otra","correo_oficial":"%s"}]', (select correo_oficial from dependencia where codigo = '150'))::jsonb, false);
+  perform pg_temp.ok((r->>'validas')::int = 2 and (r->>'con_error')::int = 3, 'importar: la vista previa cuenta 2 válidas y 3 con error');
+  perform pg_temp.ok(not exists (select 1 from dependencia where codigo in ('901', '902')), 'importar: la vista previa no escribe nada');
+  perform pg_temp.ok((select f->>'campo' from jsonb_array_elements(r->'filas') f where (f->>'fila')::int = 2) = 'codigo'
+                     and (select f->>'campo' from jsonb_array_elements(r->'filas') f where (f->>'fila')::int = 4) = 'dependencia_padre_codigo'
+                     and (select f->>'campo' from jsonb_array_elements(r->'filas') f where (f->>'fila')::int = 5) = 'correo_oficial',
+                     'importar: cada error señala el campo (código repetido, superior inexistente, correo de otra dependencia)');
+  r := fn_catalogo_importar(v_ac, 'dependencia', '[{"codigo":"901","nombre":"Dependencia Importada A","correo_oficial":"imp.a@uniautonoma.edu.co"},
+      {"codigo":"902","nombre":"Con superior","correo_oficial":"imp.c@uniautonoma.edu.co","dependencia_padre_codigo":"901"},
+      {"codigo":"","nombre":"Sin código","correo_oficial":"imp.e@uniautonoma.edu.co"}]'::jsonb, true);
+  perform pg_temp.ok((r->>'validas')::int = 2 and (select dependencia_padre_id from dependencia where codigo = '902') = (select id from dependencia where codigo = '901'),
+                     'importar: confirmar inserta las válidas y resuelve la superior por código');
+  perform pg_temp.ok(not exists (select 1 from dependencia where nombre = 'Sin código'), 'importar: omite la fila sin código');
+  r := fn_catalogo_importar(v_dep, 'programa_academico', '[{"nombre":"X","nivel":"pregrado"}]'::jsonb, true);
+  perform pg_temp.ok((r->>'denegado')::boolean, 'importar: sin permiso no importa');
+  perform pg_temp.debe_fallar(format($q$ select fn_catalogo_importar(%s, 'asunto', '[{"nombre":"x"}]', false) $q$, v_ac), 'Solo se importan');
+
+  -- Parámetros: solo el Administrador; valores fuera de rango se rechazan con mensaje claro
+  select clave into v_clave from parametro where tipo = 'entero' and maximo is not null order by clave limit 1;
+  r := fn_parametro_guardar(v_ac, v_clave, '1');
+  perform pg_temp.ok((r->>'denegado')::boolean, 'parámetros: Archivo Central no los cambia');
+  perform pg_temp.debe_fallar(format($q$ select fn_parametro_guardar(%s, %L, '999999') $q$, v_adm, v_clave), '[campo:valor|tipo:rango]');
+  perform pg_temp.debe_fallar(format($q$ select fn_parametro_guardar(%s, 'no_existe', '1') $q$, v_adm), '[campo:clave|tipo:existente]');
+
+  -- Plantillas: Archivo Central edita y restablece
+  r := fn_plantilla_guardar(v_ac, 'acuse_recibo', 'Recibimos su comunicación {consecutivo}', 'Texto de prueba');
+  perform pg_temp.ok(r->>'cuerpo' = 'Texto de prueba', 'plantillas: Archivo Central edita una plantilla');
+  r := fn_plantilla_guardar(v_ac, 'acuse_recibo', null, null, true);
+  perform pg_temp.ok(r->>'cuerpo' = (select cuerpo_original from plantilla_correo where codigo = 'acuse_recibo'), 'plantillas: restablecer el texto original');
+  perform pg_temp.debe_fallar(format($q$ select fn_plantilla_guardar(%s, 'acuse_recibo', 'x', '  ') $q$, v_ac), '[campo:cuerpo|tipo:obligatorio]');
+
+  -- Auditoría: solo quien tiene auditoria.consultar
+  r := fn_auditoria_consultar(v_ac);
+  perform pg_temp.ok((r->>'denegado')::boolean, 'auditoría: Archivo Central no la consulta');
+  r := fn_auditoria_consultar(v_adm, p_recurso_tipo => 'tipo_documental', p_recurso_id => v_id::text);
+  perform pg_temp.ok((r->>'total')::int >= 4 and jsonb_array_length(r->'datos') >= 4 and (r->'datos'->0->>'usuario') is not null,
+                     'auditoría: el Administrador filtra por recurso y ve quién actuó');
+
+  perform fn_set_usuario_actual(v_ac);   -- restaura el usuario de la sesión de pruebas
 end $$;
 
 -- ── Auditoría ────────────────────────────────────────────────────────────────

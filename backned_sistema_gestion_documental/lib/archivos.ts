@@ -62,13 +62,17 @@ export async function validarParametrosArchivo(
     .eq("clave", "formatos_permitidos")
     .single();
 
-  const formatos = (paramFormatos?.valor ?? "pdf,jpg,jpeg,png,doc,docx,xls,xlsx,txt,zip")
+  const formatosPorDefecto = ["pdf", "jpg", "jpeg", "png", "doc", "docx", "xls", "xlsx", "txt", "zip"];
+  const formatosParam = (paramFormatos?.valor ?? "")
     .toLowerCase()
     .split(",")
-    .map((f: string) => f.trim());
+    .map((f: string) => f.trim())
+    .filter(Boolean);
+
+  const formatos = Array.from(new Set([...formatosPorDefecto, ...formatosParam]));
 
   if (!formatos.includes(extension)) {
-    return { ok: false, error: `Formato .${extension} no permitido`, status: 415 };
+    return { ok: false, error: `Formato .${extension} no permitido. Permitidos: ${formatos.join(", ")}`, status: 415 };
   }
 
   return { ok: true };

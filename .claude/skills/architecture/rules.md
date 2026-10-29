@@ -27,6 +27,6 @@
 
 ## Calidad
 
-- `{{CMD_LINT}}` antes de cerrar cambios de código.
-- `{{CMD_BUILD}}` cuando se toquen rutas, imports, configuración o dependencias.
+- Tipos, lint y tests de la parte tocada antes de cerrar cambios de código (comandos en `testing/SKILL.md`).
+- Build (backend `npm run build`, frontend `npx vite build`) cuando se toquen rutas, imports, configuración o dependencias.
 - Revisión manual de las pantallas afectadas en desktop y móvil.

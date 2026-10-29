@@ -13,7 +13,7 @@
 import { NextRequest } from "next/server";
 import { esServicioN8N } from "./auth";
 import { supabase, assertSupabaseConfig } from "./supabase";
-import { errorResponse, handleError, jsonResponse, unauthorized } from "./errors";
+import { columnaDuplicada, consecutivoDuplicado, errorResponse, errorSistema, handleError, jsonResponse, unauthorized } from "./errors";
 
 type Cuerpo = Record<string, unknown>;
 
@@ -181,29 +181,38 @@ function inferirCampoTipo(mensaje: string): { campo?: string; tipo?: string } {
   return {};
 }
 
-/** Extrae campo/tipo del detalle de PostgreSQL (FK, unique, not null). */
+/** Extrae campo/tipo del detalle de PostgreSQL (FK, unique). */
 function inferirCampoTipoDetalle(detalle?: string | null): { campo?: string; tipo?: string } {
   if (!detalle) return {};
   const fk = /Key \(([^)]+)\)=\([^)]*\) is not present in table/.exec(detalle);
   if (fk) return { campo: fk[1], tipo: "existente" };
-  const dup = /Key \(([^)]+)\)=\([^)]*\) already exists/.exec(detalle);
-  if (dup) return { campo: dup[1], tipo: "duplicado" };
+  const dup = columnaDuplicada(detalle);
+  if (dup && /already exists/.test(detalle)) return { campo: dup, tipo: "duplicado" };
   return {};
 }
 
-/** Traduce un error de PostgreSQL/PostgREST a una respuesta HTTP. */
+/**
+ * Traduce un error de PostgreSQL/PostgREST a una respuesta HTTP con el contrato de RN-AC-15:
+ * reglas de negocio y datos inválidos → error de formulario (4xx, con campo);
+ * consecutivo repetido, contador, migración faltante o fallo de la base → error de sistema (5xx, con número).
+ */
 function errorDeBase(error: { message: string; code?: string; details?: string | null }): Response {
   const { mensaje, campo, tipo } = extraerCampoTipo(error.message);
   const deDetalle = inferirCampoTipoDetalle(error.details);
-  const extra: Record<string, unknown> = { detalle: error.details ?? undefined, codigo: error.code };
+  const extra: Record<string, string | undefined> = { codigo: error.code };
   if (campo || deDetalle.campo) extra.campo = campo ?? deDetalle.campo;
   if (tipo || deDetalle.tipo) extra.tipo = tipo ?? deDetalle.tipo;
+
+  // El consecutivo lo genera la base: si sale repetido o falla el contador es un error de sistema.
+  const consecutivo = error.code === "23505" ? consecutivoDuplicado(error.details) : undefined;
+  if (consecutivo) return errorSistema("CONSECUTIVO_EXISTENTE", 500, { consecutivo });
+  if (/contador_consecutivo|fn_siguiente_consecutivo/.test(error.message)) return errorSistema("CONSECUTIVO", 500, { interno: mensaje });
 
   // Reglas de negocio lanzadas por triggers/funciones (P0001): RN-AC-09, RF-AC-017, etc.
   if (/\b(RN|RF)-AC-\d+/.test(mensaje)) return errorResponse(mensaje, 409, extra);
   switch (error.code) {
-    case "23505": // único
-      return errorResponse(mensaje, 409, extra);
+    case "23505": // único (un dato que ya existe)
+      return errorResponse(extra.campo ? `Ya existe un registro con ese ${extra.campo}` : mensaje, 409, extra);
     case "23503": // FK / no existe
     case "23502": // not null
     case "23514": // check
@@ -212,9 +221,10 @@ function errorDeBase(error: { message: string; code?: string; details?: string |
     case "22007": // fecha inválida
       return errorResponse(mensaje, 400, extra);
     case "PGRST202": // función no encontrada (migración no aplicada)
-      return errorResponse(`La función SQL no existe en la base: ${mensaje}`, 500, extra);
+      return errorSistema("MIGRACION", 500, { detalle: `no existe la función SQL (${mensaje})` });
     default:
-      return errorResponse(mensaje, 500, extra);
+      console.error("[base de datos]", error);
+      return errorSistema("BASE_DATOS", 500, { interno: mensaje });
   }
 }
 

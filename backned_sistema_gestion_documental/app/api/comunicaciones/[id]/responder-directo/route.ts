@@ -16,7 +16,7 @@ import { obtenerUsuarioAutenticado, puedeGestionarComunicaciones } from "../../.
 import { obtenerComunicacion } from "../../../../../lib/comunicaciones";
 import { dispararWebhookN8N } from "../../../../../lib/n8nWebhook";
 import { SolicitudInvalida, idRuta, leer, parseBody } from "../../../../../lib/n8n";
-import { errorResponse, forbidden, handleError, jsonResponse, notFound } from "../../../../../lib/errors";
+import { errorResponse, errorSistema, forbidden, handleError, jsonResponse, notFound } from "../../../../../lib/errors";
 
 export async function POST(
   request: NextRequest,
@@ -48,8 +48,8 @@ export async function POST(
     // y la comunicación no debe quedar marcada como respondida.
     const url = process.env.N8N_WEBHOOK_RESPONDER_URL;
     if (!url) {
-      return errorResponse("Falta configurar el webhook de n8n para responder", 503, {
-        detalle: "Defina N8N_WEBHOOK_RESPONDER_URL en el .env.local del backend (URL del webhook de F3: .../webhook/bandeja/responder) y reinicie el backend.",
+      return errorSistema("CONFIGURACION", 503, {
+        detalle: "defina N8N_WEBHOOK_RESPONDER_URL en el .env.local del backend (URL del webhook de F3: .../webhook/bandeja/responder) y reinicie el backend",
       });
     }
 
@@ -62,9 +62,8 @@ export async function POST(
     if (rpcError) {
       // La función no existe en la base: falta aplicar la migración (no es un error del usuario).
       if (rpcError.code === "PGRST202") {
-        return errorResponse("Falta aplicar migraciones en Supabase para responder directamente", 500, {
-          detalle: "No existe fn_responder_directo. Ejecute en el SQL Editor 20261011000000_f4_manual_y_correo_adicional.sql y 20261012000000_responder_directo_transicion.sql.",
-          codigo: rpcError.code,
+        return errorSistema("MIGRACION", 500, {
+          detalle: "no existe fn_responder_directo; ejecute en el SQL Editor 20261011000000_f4_manual_y_correo_adicional.sql y 20261012000000_responder_directo_transicion.sql",
         });
       }
       // Reglas de negocio de la base (RN-AC-xx / RF-AC-xx) → conflicto de estado, no datos inválidos.
@@ -85,8 +84,9 @@ export async function POST(
     } catch (err) {
       // La comunicación ya quedó lista (respondida_dependencia) pero el correo no salió.
       // Es seguro reintentar: fn_responder_directo acepta una entrada ya preparada.
-      return errorResponse("n8n no pudo enviar la respuesta. Puede volver a intentarlo.", 502, {
-        detalle: err instanceof Error ? err.message : String(err),
+      return errorSistema("SERVICIO_EXTERNO", 502, {
+        detalle: "n8n no pudo enviar la respuesta; puede volver a intentarlo",
+        interno: err instanceof Error ? err.message : String(err),
       });
     }
 
