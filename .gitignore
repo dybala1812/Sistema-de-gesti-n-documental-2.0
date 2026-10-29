@@ -18,7 +18,6 @@ dist-ssr/
 build/
 .vite/
 coverage/
-NOVA_FT/
 *.tsbuildinfo
 npm-debug.log*
 yarn-debug.log*
@@ -76,4 +75,3 @@ archivos_sgd/**/*.docx
 backned_sistema_gestion_documental/**/*.pdf
 backned_sistema_gestion_documental/**/*.doc
 backned_sistema_gestion_documental/**/*.docx
-NOVA_FT/

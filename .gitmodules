@@ -1,0 +1,4 @@
+[submodule "NOVA_FT"]
+	path = NOVA_FT
+	url = https://github.com/DavidM3-M/NOVA_FT.git
+	branch = desarrollo-archivo-central
