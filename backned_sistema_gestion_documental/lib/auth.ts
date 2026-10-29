@@ -9,6 +9,7 @@
  */
 import { timingSafeEqual } from "crypto";
 import { supabase, assertSupabaseConfig } from "./supabase";
+import { PREFIJO_TOKEN_TEMPORAL, usuarioDeTokenTemporal } from "./loginTemporal"; // ⚠️ TEMPORAL
 
 export type PerfilSGD =
   | "archivo_central"
@@ -153,6 +154,14 @@ export async function obtenerUsuarioAutenticado(request: Request): Promise<Usuar
   const token = extraerToken(request);
   if (!token) {
     throw new Response(JSON.stringify({ error: "Token requerido" }), { status: 401 });
+  }
+  // ⚠️ TEMPORAL — login de pruebas por perfil (lib/loginTemporal.ts). Borrar antes del despliegue.
+  if (token.startsWith(PREFIJO_TOKEN_TEMPORAL)) {
+    const temporal = await usuarioDeTokenTemporal(token);
+    if (!temporal) {
+      throw new Response(JSON.stringify({ error: "La sesión temporal venció o no es válida: vuelva a entrar por /login-temporal" }), { status: 401 });
+    }
+    return temporal;
   }
   // El token de pruebas también pasa por validarTokenNOVA: así el usuario existe en la tabla `usuario`.
   return validarTokenNOVA(token);
