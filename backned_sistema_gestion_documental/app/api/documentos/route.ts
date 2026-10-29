@@ -6,6 +6,7 @@
 import { NextRequest } from "next/server";
 
 import { obtenerUsuarioAutenticado } from "../../../lib/auth";
+import { alcanceDocumentos } from "../../../lib/archivo";
 import { listarClasificados } from "../../../lib/clasificados";
 import { DocumentoDuplicado, crearDocumentoIndividual } from "../../../lib/documentos";
 import { SolicitudInvalida } from "../../../lib/n8n";
@@ -41,16 +42,19 @@ function respuestaInvalida(err: SolicitudInvalida) {
 
 export async function GET(request: NextRequest) {
   try {
-    await obtenerUsuarioAutenticado(request);
+    const usuario = await obtenerUsuarioAutenticado(request);
     const { searchParams } = request.nextUrl;
     const estado = searchParams.get("estado") ?? "clasificado";
     if (estado !== "clasificado" && estado !== "por_clasificar") {
       throw new SolicitudInvalida("estado debe ser clasificado o por_clasificar", "estado", "valor");
     }
+    // Permiso por bandeja; Dependencia solo ve lo de su dependencia (RF-AC-013).
+    const soloDependencia = await alcanceDocumentos(
+      usuario, estado === "por_clasificar" ? "documentos.clasificar" : "documentos.consultar");
     const documentos = await listarClasificados({
       estado,
       q: searchParams.get("q") ?? undefined,
-      dependencia_id: enteroQuery(searchParams, "dependencia_id"),
+      dependencia_id: soloDependencia ?? enteroQuery(searchParams, "dependencia_id"),
       limite: enteroQuery(searchParams, "limite"),
     });
     return jsonResponse(documentos);
