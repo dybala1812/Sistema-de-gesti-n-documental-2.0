@@ -62,15 +62,14 @@ const CONFIGS: Record<SlugCatalogo, TablaConfig> = {
     slug: "dependencias",
     tabla: "dependencia",
     ordenPorDefecto: "codigo",
-    select: "*, padre:dependencia_padre_id(id, codigo, nombre)",
+    select: "*",
     buscarColumnas: ["codigo", "nombre", "responsable", "correo_oficial"],
-    filtros: ["dependencia_padre_id"],
+    filtros: [],
     creable: true,
     importable: true,
     campos: [
       { columna: "codigo", tipo: "texto", obligatorio: true },
       { columna: "nombre", tipo: "texto", obligatorio: true },
-      { columna: "dependencia_padre_id", tipo: "entero" },
       { columna: "responsable", tipo: "texto" },
       { columna: "correo_oficial", tipo: "texto", obligatorio: true },
       { columna: "nova_dependency_id", tipo: "uuid" },
@@ -245,8 +244,13 @@ export function extraerPayload(raw: Record<string, unknown>, cfg: TablaConfig, m
 
 const ETIQUETA = /^\[campo:([^|\]]+)\|tipo:([^|\]]+)\]\s*/;
 
-/** Convierte un error de supabase.rpc en una Response lista para devolver. */
-export function errorDeBase(error: { message: string; code?: string; details?: string | null }): Response {
+const MIGRACION_CATALOGOS = "20261017000000_catalogos_parametros_auditoria.sql";
+
+/**
+ * Convierte un error de supabase.rpc en una Response lista para devolver.
+ * `migracion` es el archivo que crea la función, para el aviso de migración pendiente.
+ */
+export function errorDeBase(error: { message: string; code?: string; details?: string | null }, migracion = MIGRACION_CATALOGOS): Response {
   const etiqueta = ETIQUETA.exec(error.message);
   if (etiqueta) {
     const tipo = etiqueta[2];
@@ -272,7 +276,7 @@ export function errorDeBase(error: { message: string; code?: string; details?: s
   }
   if (error.code === "PGRST202") {
     return errorSistema("MIGRACION", 500, {
-      detalle: "ejecute database/supabase/migrations/20261017000000_catalogos_parametros_auditoria.sql en el SQL Editor de Supabase",
+      detalle: `ejecute database/supabase/migrations/${migracion} en el SQL Editor de Supabase`,
     });
   }
   console.error("[catálogos]", error);
@@ -286,9 +290,13 @@ function siDenegado(data: unknown): void {
   }
 }
 
-async function rpc<T>(funcion: string, params: Record<string, unknown>): Promise<T> {
+/**
+ * Llama una función SQL; los errores y el {denegado} salen como Response con el contrato de errores.
+ * También la usa lib/historico.ts (registro histórico).
+ */
+export async function rpc<T>(funcion: string, params: Record<string, unknown>, migracion = MIGRACION_CATALOGOS): Promise<T> {
   const { data, error } = await supabase.rpc(funcion, params);
-  if (error) throw errorDeBase(error);
+  if (error) throw errorDeBase(error, migracion);
   siDenegado(data);
   return data as T;
 }
@@ -362,7 +370,7 @@ export async function cambiarEstadoCatalogo(usuarioId: number, cfg: TablaConfig,
 
 /** Columnas que acepta cada importación (las referencias van por código). */
 const COLUMNAS_IMPORTACION: Partial<Record<SlugCatalogo, string[]>> = {
-  dependencias: ["codigo", "nombre", "dependencia_padre_codigo", "responsable", "correo_oficial"],
+  dependencias: ["codigo", "nombre", "responsable", "correo_oficial"],
   trd: ["codigo", "nombre", "descripcion", "serie_padre_codigo", "anios_gestion", "anios_central", "disposicion_final"],
   programas: ["codigo", "nombre", "nivel"],
 };

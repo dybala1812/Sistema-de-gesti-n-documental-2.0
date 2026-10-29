@@ -7,6 +7,7 @@ import { NextRequest } from "next/server";
 
 import { obtenerUsuarioAutenticado } from "../../../lib/auth";
 import { listarClasificados } from "../../../lib/clasificados";
+import { alcanceDocumentos } from "../../../lib/archivo";
 import { SolicitudInvalida } from "../../../lib/n8n";
 import { errorResponse, handleError, jsonResponse } from "../../../lib/errors";
 
@@ -22,13 +23,14 @@ function enteroQuery(searchParams: URLSearchParams, campo: string): number | und
 
 export async function GET(request: NextRequest) {
   try {
-    // Solo exige sesión válida. TODO: restringir por perfil con permiso_perfil cuando se defina la función.
-    await obtenerUsuarioAutenticado(request);
+    // Requiere documentos.consultar; Dependencia solo ve lo de su dependencia (RF-AC-013).
+    const usuario = await obtenerUsuarioAutenticado(request);
+    const soloDependencia = await alcanceDocumentos(usuario, "documentos.consultar");
 
     const { searchParams } = request.nextUrl;
     const clasificados = await listarClasificados({
       q: searchParams.get("q") ?? undefined,
-      dependencia_id: enteroQuery(searchParams, "dependencia_id"),
+      dependencia_id: soloDependencia ?? enteroQuery(searchParams, "dependencia_id"),
       limite: enteroQuery(searchParams, "limite"),
     });
     return jsonResponse(clasificados);
