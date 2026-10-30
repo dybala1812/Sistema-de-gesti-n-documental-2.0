@@ -97,30 +97,28 @@ export async function POST(req: Request) {
     if (actaId && !UUID_RE.test(actaId))
       return errorFormulario("El acta de entrega no es válida", 400, { campo: "acta_archivo_id", tipo: "formato" });
 
-    // Física: las cajas no se suben, se quedan en bodega. Se exige dónde quedó guardada cada una
-    // (ubicación del catálogo: bodega · estante · módulo), y se guarda en su inventario.
-    const ubicacionDeCaja = new Map<string, number>();
+    // Física: las cajas no se suben, se quedan en Archivo Central. Se exige dónde quedó guardada cada
+    // una: carro, estante y bandeja escritos en esta carga (D-25: no salen de un catálogo, cada caja
+    // puede quedar en un sitio distinto), y se guardan en su fila del inventario.
+    type Posicion = { carro: string; estante: string; bandeja: string };
+    const ubicacionDeCaja = new Map<string, Posicion>();
     if (b.tipo === "fisica") {
-      const lista: { caja?: unknown; ubicacion_id?: unknown }[] = Array.isArray(b.cajas) ? b.cajas : [];
+      const lista: { caja?: unknown; carro?: unknown; estante?: unknown; bandeja?: unknown }[] = Array.isArray(b.cajas) ? b.cajas : [];
       if (lista.length === 0)
         return errorFormulario("Indica cuántas cajas entregó la dependencia y dónde quedaron", 400, { campo: "cajas", tipo: "obligatorio" });
       if (lista.length > 2000)
         return errorFormulario("Máximo 2.000 cajas por transferencia", 400, { campo: "cajas", tipo: "rango" });
       const sinUbicacion: string[] = [];
+      const texto = (v: unknown) => String(v ?? "").trim().slice(0, 60);
       for (const c of lista) {
-        const caja = String(c?.caja ?? "").trim();
-        const ubic = Number(c?.ubicacion_id);
+        const caja = texto(c?.caja);
         if (!caja) continue;
-        if (Number.isInteger(ubic) && ubic > 0) ubicacionDeCaja.set(caja, ubic);
+        const pos = { carro: texto(c?.carro), estante: texto(c?.estante), bandeja: texto(c?.bandeja) };
+        if (pos.carro && pos.estante && pos.bandeja) ubicacionDeCaja.set(caja, pos);
         else sinUbicacion.push(caja);
       }
       if (sinUbicacion.length > 0)
-        return errorFormulario(`Falta la ubicación de la caja ${sinUbicacion.slice(0, 5).join(", ")}${sinUbicacion.length > 5 ? "…" : ""}`, 400, { campo: "cajas", tipo: "obligatorio" });
-      const ids = [...new Set(ubicacionDeCaja.values())];
-      const { data: ubics, error: eUbic } = await supabase.from("ubicacion_fisica").select("id").in("id", ids).eq("estado", "activo");
-      if (eUbic) throw eUbic;
-      if ((ubics ?? []).length !== ids.length)
-        return errorFormulario("Alguna ubicación no existe o está inactiva", 400, { campo: "cajas", tipo: "existente" });
+        return errorFormulario(`Falta el carro, estante o bandeja de la caja ${sinUbicacion.slice(0, 5).join(", ")}${sinUbicacion.length > 5 ? "…" : ""}`, 400, { campo: "cajas", tipo: "obligatorio" });
     }
 
     // registrar_transferencia (en Supabase) exige al menos una fila de inventario. Sin detalle:
@@ -156,15 +154,15 @@ export async function POST(req: Request) {
         .from("inventario_item").select("caja").eq("transferencia_id", creada.id);
       if (eEx) throw eEx;
       const conFilas = new Set((existentes ?? []).map(i => String(i.caja)));
-      const nuevas: { transferencia_id: number; caja: string; ubicacion_id: number; fila_origen: number }[] = [];
+      const nuevas: ({ transferencia_id: number; caja: string; fila_origen: number } & Posicion)[] = [];
       let fila = 1;
-      for (const [caja, ubic] of ubicacionDeCaja) {
+      for (const [caja, pos] of ubicacionDeCaja) {
         if (conFilas.has(caja)) {
           const { error: eU } = await supabase
-            .from("inventario_item").update({ ubicacion_id: ubic }).eq("transferencia_id", creada.id).eq("caja", caja);
+            .from("inventario_item").update(pos).eq("transferencia_id", creada.id).eq("caja", caja);
           if (eU) { console.error("POST /api/transferencias (ubicación)", eU); avisos.push(`no se guardó la ubicación de la caja ${caja}`); }
         } else {
-          nuevas.push({ transferencia_id: creada.id, caja, ubicacion_id: ubic, fila_origen: fila });
+          nuevas.push({ transferencia_id: creada.id, caja, ...pos, fila_origen: fila });
         }
         fila++;
       }

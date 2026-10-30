@@ -10,6 +10,11 @@ Seguridad: secretos, validaciones, permisos revisados
 Commit: hash o "ninguno"
 -->
 
+## 2026-10-30 — feature | Carro, estante y bandeja se escriben en cada carga (D-25) · arreglo migración 27
+Cambio: en la transferencia física, cada caja lleva su Carro, Estante y Bandeja escritos en la carga (con "Poner en todas las cajas" y cambio por caja), ya no se eligen de un catálogo; el backend (POST /api/transferencias) los exige por caja y los guarda en inventario_item; el detalle los muestra (cajas viejas sin esos datos usan la ubicación del catálogo). Catálogos › Ubicaciones físicas queda oculta. Los documentos ya tenían los cinco campos de texto. Migración 27: la línea que pasa las especializaciones a Posgrado estaba antes de crear la columna nivel_id (ERROR 42703 al correrla en Supabase); se movió después. Como el error deshizo todo, se puede volver a correr.
+Tests: tsc sin errores en archivos propios; Vite compila los 4 módulos tocados; API en Supabase real: sin estante → 400 «Falta el carro, estante o bandeja de la caja 1»; transferencia física ficticia TR-2026-021 con 2 cajas → 201 y el detalle devuelve carro/estante/bandeja de cada una.
+Commit: rama feature/historias-niveles-transferencias.
+
 ## 2026-10-30 — feature | Niveles iniciales: Pregrado, Técnico y Posgrado
 Cambio: la migración 27 (aún sin aplicar) crea los niveles Pregrado, Técnico y Posgrado (tipo pregrado, técnico o posgrado); las especializaciones, maestrías y doctorados se registran como programas del nivel Posgrado, y los programas que ya tenían esos niveles quedan en Posgrado. Catálogos › Niveles ofrece el tipo Técnico; en Historias académicas, con Posgrado el campo se llama "Especialización / programa de posgrado".
 Tests: tsc sin errores en archivos propios; Vite compila CatalogosArea y NuevaCargaHistorias. La migración 27 no se probó (no está aplicada y Docker está apagado).

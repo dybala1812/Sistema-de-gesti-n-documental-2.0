@@ -4803,16 +4803,15 @@ insert into nivel_formacion (codigo, nombre, tipo, orden) values
   ('posgrado', 'Posgrado', 'posgrado', 30)
 on conflict (codigo) do nothing;
 
--- Programas que ya estaban como especialización, maestría o doctorado (migración 24) quedan en Posgrado.
-update programa_academico p set nivel_id = (select id from nivel_formacion where codigo = 'posgrado')
- where p.nivel_id is null and p.nivel::text in ('especializacion', 'maestria', 'doctorado');
-
 -- Programas: nivel del catálogo.
 alter table programa_academico add column if not exists nivel_id bigint references nivel_formacion(id);
 alter table programa_academico alter column nivel drop not null;
 update programa_academico p set nivel_id = n.id
   from nivel_formacion n
  where p.nivel_id is null and n.codigo = p.nivel::text;
+-- Programas que ya estaban como especialización, maestría o doctorado (migración 24) quedan en Posgrado.
+update programa_academico p set nivel_id = (select id from nivel_formacion where codigo = 'posgrado')
+ where p.nivel_id is null and p.nivel::text in ('especializacion', 'maestria', 'doctorado');
 create unique index if not exists programa_nombre_nivel_id_unico on programa_academico (lower(nombre), nivel_id);
 
 -- nivel_id ⇄ nivel (enum): el que venga completa al otro.
