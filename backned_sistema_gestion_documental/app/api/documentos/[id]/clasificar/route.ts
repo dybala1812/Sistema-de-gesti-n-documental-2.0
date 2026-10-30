@@ -1,7 +1,7 @@
 /**
  * POST /api/documentos/[id]/clasificar
  * Body: { asunto_id?, tipo?, consecutivo?, fecha? (AAAA-MM-DD), anio?, remitente?, destinatario?,
- *         caja?, carpeta?, ubicacion_id?, observaciones?, clasificar?: boolean (por defecto true) }
+ *         carro?, estante?, bandeja?, caja?, carpeta?, ubicacion_id?, observaciones?, clasificar?: boolean (por defecto true) }
  * Guarda los datos de un documento de "Por clasificar" y, con clasificar=true, lo clasifica (RF-AC-011):
  * sale de Por clasificar y queda en Clasificados y en el Archivo (Dependencia → Año → Asunto).
  * Con clasificar=false solo guarda lo escrito. También sirve para reclasificar.
@@ -18,7 +18,7 @@ const MIGRACION = "20261021000000_clasificar_documento.sql";
 /** Claves que la función SQL sabe cambiar; las demás se ignoran. */
 const CLAVES = [
   "asunto_id", "tipo", "consecutivo", "fecha", "anio", "remitente", "destinatario",
-  "caja", "carpeta", "ubicacion_id", "observaciones",
+  "carro", "estante", "bandeja", "caja", "carpeta", "ubicacion_id", "observaciones",
 ] as const;
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

@@ -1,6 +1,6 @@
 /**
  * GET  /api/documentos?estado=clasificado|por_clasificar&q=&dependencia_id=&limite=
- * POST /api/documentos  (multipart: archivo, dependencia_id, anio, asunto_id?, tipo?, consecutivo?, fecha?, caja?, carpeta?, ubicacion_id?, origen?=app_movil)
+ * POST /api/documentos  (multipart: archivo, dependencia_id, anio, asunto_id?, tipo?, consecutivo?, fecha?, carro?, estante?, bandeja?, caja?, carpeta?, ubicacion_id?, origen?=app_movil)
  * Va en: app/api/documentos/route.ts
  */
 import { NextRequest } from "next/server";
@@ -80,6 +80,9 @@ export async function POST(request: NextRequest) {
         tipo: textoForm(form, "tipo"),
         consecutivo: textoForm(form, "consecutivo"),
         fecha: textoForm(form, "fecha"),
+        carro: textoForm(form, "carro"),
+        estante: textoForm(form, "estante"),
+        bandeja: textoForm(form, "bandeja"),
         caja: textoForm(form, "caja"),
         carpeta: textoForm(form, "carpeta"),
         ubicacion_id: enteroForm(form, "ubicacion_id"),

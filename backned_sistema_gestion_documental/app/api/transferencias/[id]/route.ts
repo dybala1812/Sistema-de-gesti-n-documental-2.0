@@ -44,7 +44,7 @@ export async function GET(_req: Request, ctx: Ctx) {
     if (!t) return errorFormulario("No existe la transferencia", 404);
 
     const { data: items, error: e2 } = await supabase
-      .from("inventario_item").select("*, ubicacion:ubicacion_id(id, bodega, estante, modulo)").eq("transferencia_id", id)
+      .from("inventario_item").select("*, ubicacion:ubicacion_id(id, carro, estante, bandeja, bodega, modulo)").eq("transferencia_id", id)
       .order("fila_origen", { ascending: true });
     if (e2) throw e2;
 

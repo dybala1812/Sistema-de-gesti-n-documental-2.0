@@ -54,7 +54,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 const DISPOSICION_FINAL = ["conservacion_total", "eliminacion", "seleccion", "digitalizacion"];
-const NIVEL_ACADEMICO = ["pregrado", "especializacion", "maestria", "doctorado"];
+// "posgrado" genérico queda para registros viejos; los nuevos usan especialización, maestría o doctorado (migración 24).
+const NIVEL_ACADEMICO = ["pregrado", "posgrado", "especializacion", "maestria", "doctorado"];
 const PERFILES = ["archivo_central", "dependencia", "registro_academico", "secretaria_general", "administrador"];
 
 const CONFIGS: Record<SlugCatalogo, TablaConfig> = {
@@ -139,16 +140,17 @@ const CONFIGS: Record<SlugCatalogo, TablaConfig> = {
   ubicaciones: {
     slug: "ubicaciones",
     tabla: "ubicacion_fisica",
-    ordenPorDefecto: "bodega",
+    ordenPorDefecto: "carro",
     select: "*",
-    buscarColumnas: ["bodega", "estante", "modulo", "descripcion"],
+    buscarColumnas: ["carro", "estante", "bandeja", "descripcion"],
     filtros: [],
     creable: true,
     importable: false,
+    // Posición en Archivo Central: Carro → Estante → Bandeja (D-23). Bodega y módulo quedan para registros viejos.
     campos: [
-      { columna: "bodega", tipo: "texto", obligatorio: true },
-      { columna: "estante", tipo: "texto" },
-      { columna: "modulo", tipo: "texto" },
+      { columna: "carro", tipo: "texto", obligatorio: true },
+      { columna: "estante", tipo: "texto", obligatorio: true },
+      { columna: "bandeja", tipo: "texto", obligatorio: true },
       { columna: "descripcion", tipo: "texto" },
     ],
   },
