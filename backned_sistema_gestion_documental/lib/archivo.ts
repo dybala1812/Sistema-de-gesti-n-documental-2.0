@@ -34,7 +34,7 @@ function texto(sp: URLSearchParams, campo: string): string | undefined {
 
 /**
  * GET /api/archivo/buscar: año, mes, dependencia_id, tipo, asunto_id, asunto, consecutivo (acepta
- * "385 del 29 de febrero"), persona, trd, texto, alcance (todo | documentos | comunicaciones), pagina.
+ * "385 del 29 de febrero"), persona, trd, texto, alcance (todo | documentos | comunicaciones | historias | transferencias), pagina.
  */
 export async function buscarArchivo(usuarioId: number, sp: URLSearchParams) {
   const anioActual = new Date().getFullYear();

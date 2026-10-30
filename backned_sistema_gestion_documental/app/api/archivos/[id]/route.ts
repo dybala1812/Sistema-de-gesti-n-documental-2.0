@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { obtenerUsuarioAutenticado, extraerToken } from "../../../../lib/auth";
 import { obtenerArchivo } from "../../../../lib/archivos";
-import { assertSupabaseConfig } from "../../../../lib/supabase";
+import { assertSupabaseConfig, supabase } from "../../../../lib/supabase";
 import { SolicitudInvalida } from "../../../../lib/n8n";
 import { errorResponse, handleError } from "../../../../lib/errors";
 
@@ -12,19 +12,41 @@ function esN8N(request: NextRequest): boolean {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * ¿Puede este usuario descargar el archivo? Revisa el recurso dueño (documento, historia, adjunto
+ * de comunicación, transferencia, lote) con fn_archivo_puede_descargar (migración 26), que deja el
+ * intento denegado en la auditoría. Si la migración aún no está aplicada: en desarrollo se permite
+ * con un aviso en consola; en producción se niega (nunca abierto por omisión).
+ */
+async function puedeDescargar(usuarioId: number, archivoId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc("fn_archivo_puede_descargar", { p_usuario_id: usuarioId, p_archivo_id: archivoId });
+  if (!error) return data === true;
+  const falta = error.code === "PGRST202" || /fn_archivo_puede_descargar/.test(error.message);
+  if (falta && process.env.NODE_ENV !== "production") {
+    console.warn("Falta la migración 20261026000000_archivo_permiso_descarga.sql: la descarga no revisa el permiso por recurso.");
+    return true;
+  }
+  console.error("fn_archivo_puede_descargar:", error.message);
+  return false;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     assertSupabaseConfig();
-    if (!esN8N(request)) {
-      await obtenerUsuarioAutenticado(request);
-    }
+    const n8n = esN8N(request);
+    const usuario = n8n ? null : await obtenerUsuarioAutenticado(request);
 
     const { id } = await params;
     if (!UUID.test(id)) {
       throw new SolicitudInvalida("id debe ser un UUID válido", "id", "formato");
+    }
+    // Permiso por recurso (n8n, con su token de servicio, descarga los adjuntos que reenvía F5).
+    // Mismo 403 exista o no el archivo: no se revela qué ids existen.
+    if (usuario && !(await puedeDescargar(usuario.id, id))) {
+      return errorResponse("No tiene permiso para ver este archivo", 403);
     }
     const archivo = await obtenerArchivo(id);
 

@@ -32,9 +32,13 @@ export interface ClasificadoDTO {
   dependencia_id: number | null;
   asunto: string | null;
   trd: string | null;
+  /** Ubicación física: Carro → Estante → Bandeja → Caja → Carpeta (D-23). */
+  carro: string | null;
+  estante: string | null;
+  bandeja: string | null;
   caja: string | null;
   carpeta: string | null;
-  /** Bodega · estante · módulo, si el documento tiene ubicación del catálogo. */
+  /** Posición del catálogo (Carro · Estante · Bandeja), si el documento la tiene. */
   ubicacion: UbicacionDTO | null;
   origen: string | null;
   estado: string;
@@ -46,8 +50,10 @@ export interface ClasificadoDTO {
 
 export interface UbicacionDTO {
   id: number;
-  bodega: string;
+  carro: string | null;
   estante: string | null;
+  bandeja: string | null;
+  bodega: string | null;
   modulo: string | null;
 }
 
@@ -63,6 +69,9 @@ export interface Fila {
   tipo_comunicacion: string | null;
   remitente: string | null;
   destinatario: string | null;
+  carro: string | null;
+  estante: string | null;
+  bandeja: string | null;
   caja: string | null;
   carpeta: string | null;
   estado: string;
@@ -77,12 +86,12 @@ export interface Fila {
 
 export const SELECT = `
   id, titulo, anio, consecutivo, fecha_documento, tipo_comunicacion, remitente, destinatario,
-  caja, carpeta, estado, archivo_id, cargado_en,
+  carro, estante, bandeja, caja, carpeta, estado, archivo_id, cargado_en,
   dependencia:dependencia_id ( id, nombre ),
   asunto:asunto_id ( nombre, trd:trd_id ( codigo ) ),
   transferencia:transferencia_id ( codigo ),
   archivo:archivo_id ( paginas, nombre_original ),
-  ubicacion:ubicacion_id ( id, bodega, estante, modulo )
+  ubicacion:ubicacion_id ( id, carro, estante, bandeja, bodega, modulo )
 `;
 
 /** Acepta ENT/SAL/INT o entrada/salida/interno, en mayúsculas o minúsculas. */
@@ -117,6 +126,9 @@ export function aDTO(f: Fila): ClasificadoDTO {
     dependencia_id: dep?.id ?? null,
     asunto: asunto?.nombre ?? null,
     trd: trd?.codigo ?? null,
+    carro: f.carro,
+    estante: f.estante,
+    bandeja: f.bandeja,
     caja: f.caja,
     carpeta: f.carpeta,
     ubicacion: uno(f.ubicacion),

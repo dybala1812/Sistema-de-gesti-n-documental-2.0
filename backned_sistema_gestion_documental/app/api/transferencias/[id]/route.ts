@@ -44,7 +44,7 @@ export async function GET(_req: Request, ctx: Ctx) {
     if (!t) return errorFormulario("No existe la transferencia", 404);
 
     const { data: items, error: e2 } = await supabase
-      .from("inventario_item").select("*, ubicacion:ubicacion_id(id, bodega, estante, modulo)").eq("transferencia_id", id)
+      .from("inventario_item").select("*, ubicacion:ubicacion_id(id, carro, estante, bandeja, bodega, modulo)").eq("transferencia_id", id)
       .order("fila_origen", { ascending: true });
     if (e2) throw e2;
 
@@ -91,8 +91,11 @@ export async function GET(_req: Request, ctx: Ctx) {
         folios: i.folios, docs: i.docs ?? null,
         consecutivoDesde: i.consecutivo_desde, consecutivoHasta: i.consecutivo_hasta,
         descripcion: i.descripcion ?? i.observaciones ?? null,
-        /** Dónde quedó guardada la caja en físico (bodega · estante · módulo). */
-        ubicacion: (Array.isArray(i.ubicacion) ? i.ubicacion[0] : i.ubicacion) ?? null,
+        /** Dónde quedó guardada la caja: carro · estante · bandeja escritos en la carga (D-25);
+         *  las cajas viejas sin esos datos usan la ubicación del catálogo. */
+        ubicacion: i.carro || i.estante || i.bandeja
+          ? { id: 0, carro: i.carro ?? null, estante: i.estante ?? null, bandeja: i.bandeja ?? null }
+          : (Array.isArray(i.ubicacion) ? i.ubicacion[0] : i.ubicacion) ?? null,
       })),
       /** Digital: los archivos de la transferencia (se ven y descargan con GET /api/archivos/{id}). */
       archivos,

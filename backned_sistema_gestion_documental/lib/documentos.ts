@@ -40,9 +40,13 @@ export interface DatosNuevoDocumento {
   consecutivo?: string;
   /** AAAA-MM-DD */
   fecha?: string;
+  /** Ubicación física: Carro → Estante → Bandeja → Caja → Carpeta (D-23). */
+  carro?: string;
+  estante?: string;
+  bandeja?: string;
   caja?: string;
   carpeta?: string;
-  /** Bodega · estante · módulo del catálogo de ubicaciones físicas (opcional). */
+  /** Posición del catálogo de ubicaciones (opcional). */
   ubicacion_id?: number;
   /** Por defecto "documento_individual" (carga A); "app_movil" si se escaneó con la app del celular (carga F). */
   origen?: "documento_individual" | "app_movil";
@@ -110,6 +114,9 @@ export async function crearDocumentoIndividual(
       tipo_comunicacion: datos.tipo ? TIPO_DB[datos.tipo] : null,
       consecutivo,
       fecha_documento: datos.fecha ?? null,
+      carro: datos.carro?.trim() || null,
+      estante: datos.estante?.trim() || null,
+      bandeja: datos.bandeja?.trim() || null,
       caja: datos.caja?.trim() || null,
       carpeta: datos.carpeta?.trim() || null,
       ubicacion_id: datos.ubicacion_id ?? null,
