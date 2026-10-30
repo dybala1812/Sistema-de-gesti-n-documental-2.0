@@ -4660,6 +4660,608 @@ end $$;
 
 
 -- ═════════════════════════════════════════════════════════════════════════════
+-- Migración: 20261026000000_archivo_permiso_descarga.sql
+-- ═════════════════════════════════════════════════════════════════════════════
+-- =============================================================================
+--  26 Permiso por recurso al descargar un archivo (RF-AC-023, RN-AC-06, Ley 1581)
+--
+--  GET /api/archivos/{id} entregaba cualquier archivo a cualquier usuario con sesión que
+--  conociera el UUID. fn_archivo_puede_descargar revisa a qué pertenece el archivo y exige el
+--  permiso de ese recurso; basta con que UNO de sus dueños lo permita:
+--    - quien lo subió (para verlo justo después de cargarlo);
+--    - documento: documentos.consultar o documentos.clasificar + fn_puede_ver_dependencia;
+--    - historia_documento: historias.consultar o cargas.historias + fn_puede_ver_historia
+--      (Registro Académico solo historias activas; Archivo Central y Secretaría General, todas);
+--    - adjunto o copia de correo de una comunicación: comunicaciones.consultar + su dependencia
+--      (sin dependencia asignada, solo perfiles que no son Dependencia);
+--    - acta, FUID o archivo de una transferencia: cargas.transferencia, transferencias.recibir o
+--      documentos.consultar + fn_puede_ver_dependencia de la transferencia;
+--    - informe o archivo de un lote de carga: quien creó el lote o Archivo Central.
+--  Un archivo sin dueño conocido solo lo ve quien lo subió. El intento denegado queda en la
+--  auditoría (accion 'descargar', resultado 'denegado'). n8n (token de servicio) no pasa por aquí.
+-- =============================================================================
+
+create or replace function fn_archivo_puede_descargar(p_usuario_id bigint, p_archivo_id uuid)
+returns boolean
+language plpgsql
+as $$
+declare
+  v_ok     boolean := false;
+  v_perfil perfil_usuario;
+begin
+  perform fn_set_usuario_actual(p_usuario_id);
+  select perfil into v_perfil from usuario where id = p_usuario_id and fn_usuario_puede_ingresar(id);
+
+  if v_perfil is not null then
+    v_ok :=
+      exists (select 1 from archivo a where a.id = p_archivo_id and a.subido_por = p_usuario_id)
+      or exists (
+        select 1 from documento d
+         where d.archivo_id = p_archivo_id
+           and (fn_tiene_permiso(p_usuario_id, 'documentos.consultar') or fn_tiene_permiso(p_usuario_id, 'documentos.clasificar'))
+           and fn_puede_ver_dependencia(p_usuario_id, d.dependencia_id))
+      or exists (
+        select 1 from historia_documento hd
+         where hd.archivo_id = p_archivo_id
+           and (fn_tiene_permiso(p_usuario_id, 'historias.consultar') or fn_tiene_permiso(p_usuario_id, 'cargas.historias'))
+           and fn_puede_ver_historia(p_usuario_id, hd.historia_id))
+      or (fn_tiene_permiso(p_usuario_id, 'comunicaciones.consultar') and exists (
+        select 1 from comunicacion c
+         where (c.id in (select ca.comunicacion_id from comunicacion_adjunto ca where ca.archivo_id = p_archivo_id)
+                or c.id in (select ce.comunicacion_id from correo_enviado ce where p_archivo_id = any (ce.archivo_ids)))
+           and (case when c.dependencia_id is null then v_perfil <> 'dependencia'
+                     else fn_puede_ver_dependencia(p_usuario_id, c.dependencia_id) end)))
+      or ((fn_tiene_permiso(p_usuario_id, 'cargas.transferencia') or fn_tiene_permiso(p_usuario_id, 'transferencias.recibir')
+           or fn_tiene_permiso(p_usuario_id, 'documentos.consultar')) and exists (
+        select 1 from transferencia t
+         where (t.acta_archivo_id = p_archivo_id or t.fuid_archivo_id = p_archivo_id
+                or t.id in (select ta.transferencia_id from transferencia_archivo ta where ta.archivo_id = p_archivo_id))
+           and fn_puede_ver_dependencia(p_usuario_id, t.dependencia_id)))
+      or exists (
+        select 1 from lote_carga l
+         where (l.informe_archivo_id = p_archivo_id
+                or l.id in (select li.lote_id from lote_item li where li.archivo_id = p_archivo_id))
+           and (l.creado_por = p_usuario_id or v_perfil = 'archivo_central'));
+  end if;
+
+  if not v_ok then
+    insert into auditoria (usuario_id, accion, recurso_tipo, recurso_id, resultado, detalle)
+    values (p_usuario_id, 'descargar', 'archivo', p_archivo_id::text, 'denegado',
+            jsonb_build_object('motivo', 'sin permiso sobre el recurso del archivo'));
+  end if;
+  return v_ok;
+end $$;
+
+-- Solo el backend (service_role) la llama.
+revoke execute on function fn_archivo_puede_descargar(bigint, uuid) from public;
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    execute 'revoke execute on function fn_archivo_puede_descargar(bigint, uuid) from anon';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'revoke execute on function fn_archivo_puede_descargar(bigint, uuid) from authenticated';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'grant execute on function fn_archivo_puede_descargar(bigint, uuid) to service_role';
+  end if;
+end $$;
+
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- Migración: 20261027000000_catalogo_niveles.sql
+-- ═════════════════════════════════════════════════════════════════════════════
+-- =============================================================================
+--  27 Catálogo de niveles de formación (RF-AC-004, RF-AC-020)
+--
+--  Los niveles (Pregrado, Especialización, Maestría, Doctorado…) se administran en
+--  Catálogos › Niveles: se agregan, editan e inactivan sin tocar la base. Cada nivel es de
+--  tipo pregrado o posgrado. Programas académicos elige su nivel de este catálogo (nivel_id);
+--  la columna vieja programa_academico.nivel (enum) se mantiene sincronizada por un trigger
+--  para la importación desde Excel y queda vacía si el nivel no existe en el enum.
+--  Historias académicas lista los niveles que tienen programas activos.
+-- =============================================================================
+
+create table if not exists nivel_formacion (
+  id              bigint generated always as identity primary key,
+  codigo          text not null unique,                     -- se genera del nombre si no viene
+  nombre          text not null,
+  tipo            text not null default 'posgrado' check (tipo in ('pregrado', 'posgrado')),
+  orden           integer not null default 100,
+  estado          estado_registro not null default 'activo',
+  creado_en       timestamptz not null default now(),
+  actualizado_en  timestamptz not null default now()
+);
+create unique index if not exists nivel_formacion_nombre_unico on nivel_formacion (lower(nombre));
+comment on table nivel_formacion is 'RF-AC-004. Niveles de formación de los programas (Pregrado, Especialización, Maestría…). Sin borrado: se inactiva.';
+
+-- Código a partir del nombre ("Especialización" → "especializacion").
+create or replace function fn_trg_nivel_formacion_codigo()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.nombre := trim(regexp_replace(new.nombre, '\s+', ' ', 'g'));
+  if new.codigo is null or trim(new.codigo) = '' then
+    new.codigo := trim(both '_' from lower(regexp_replace(unaccent(new.nombre), '[^a-zA-Z0-9]+', '_', 'g')));
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists nivel_formacion_codigo on nivel_formacion;
+create trigger nivel_formacion_codigo before insert or update of nombre, codigo on nivel_formacion
+for each row execute function fn_trg_nivel_formacion_codigo();
+
+drop trigger if exists nivel_formacion_auditar on nivel_formacion;
+create trigger nivel_formacion_auditar after insert or update on nivel_formacion
+for each row execute function fn_trg_auditar_cambios();
+
+insert into nivel_formacion (codigo, nombre, tipo, orden) values
+  ('pregrado', 'Pregrado', 'pregrado', 10),
+  ('especializacion', 'Especialización', 'posgrado', 20),
+  ('maestria', 'Maestría', 'posgrado', 30),
+  ('doctorado', 'Doctorado', 'posgrado', 40),
+  ('posgrado', 'Posgrado', 'posgrado', 90)
+on conflict (codigo) do nothing;
+
+-- Programas: nivel del catálogo.
+alter table programa_academico add column if not exists nivel_id bigint references nivel_formacion(id);
+alter table programa_academico alter column nivel drop not null;
+update programa_academico p set nivel_id = n.id
+  from nivel_formacion n
+ where p.nivel_id is null and n.codigo = p.nivel::text;
+create unique index if not exists programa_nombre_nivel_id_unico on programa_academico (lower(nombre), nivel_id);
+
+-- nivel_id ⇄ nivel (enum): el que venga completa al otro.
+create or replace function fn_trg_programa_nivel()
+returns trigger
+language plpgsql
+as $$
+declare
+  v_codigo text;
+begin
+  if new.nivel_id is null and new.nivel is not null then
+    select id into new.nivel_id from nivel_formacion where codigo = new.nivel::text;
+  end if;
+  if new.nivel_id is null then
+    raise exception '[campo:nivel_id|tipo:obligatorio] Elija el nivel del programa' using errcode = '22023';
+  end if;
+  select codigo into v_codigo from nivel_formacion where id = new.nivel_id;
+  if v_codigo is null then
+    raise exception '[campo:nivel_id|tipo:existente] El nivel no existe' using errcode = '22023';
+  end if;
+  new.nivel := case when v_codigo in (select e.enumlabel::text from pg_enum e where e.enumtypid = 'nivel_academico'::regtype)
+                    then v_codigo::nivel_academico end;
+  return new;
+end $$;
+
+drop trigger if exists programa_nivel on programa_academico;
+create trigger programa_nivel before insert or update of nivel, nivel_id on programa_academico
+for each row execute function fn_trg_programa_nivel();
+
+-- El catálogo genérico (fn_catalogo_guardar / fn_catalogo_estado) conoce la tabla nueva.
+create or replace function fn_catalogo_permiso(p_tabla text)
+returns text
+language sql immutable
+as $$
+  select case p_tabla
+    when 'dependencia' then 'catalogos.gestionar'
+    when 'trd' then 'catalogos.gestionar'
+    when 'asunto' then 'catalogos.gestionar'
+    when 'tipo_documental' then 'catalogos.gestionar'
+    when 'programa_academico' then 'catalogos.gestionar'
+    when 'nivel_formacion' then 'catalogos.gestionar'
+    when 'ubicacion_fisica' then 'catalogos.gestionar'
+    when 'usuario' then 'usuarios.gestionar'
+  end
+$$;
+
+create or replace function fn_catalogo_columnas(p_tabla text)
+returns text[]
+language sql immutable
+as $$
+  select case p_tabla
+    when 'dependencia' then array['codigo', 'nombre', 'dependencia_padre_id', 'responsable', 'correo_oficial', 'nova_dependency_id']
+    when 'trd' then array['codigo', 'nombre', 'descripcion', 'serie_padre_id', 'anios_gestion', 'anios_central', 'disposicion_final']
+    when 'asunto' then array['dependencia_id', 'nombre', 'trd_id', 'descripcion']
+    when 'tipo_documental' then array['nombre']
+    when 'programa_academico' then array['codigo', 'nombre', 'nivel', 'nivel_id']
+    when 'nivel_formacion' then array['nombre', 'tipo', 'orden']
+    when 'ubicacion_fisica' then array['carro', 'estante', 'bandeja', 'descripcion', 'bodega', 'modulo']
+    -- Los usuarios llegan de NOVA: aquí solo se asignan perfil y dependencia.
+    when 'usuario' then array['dependencia_id', 'perfil']
+  end
+$$;
+
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- Migración: 20261028000000_historias_transferencias_busqueda.sql
+-- ═════════════════════════════════════════════════════════════════════════════
+-- =============================================================================
+--  28 Historias académicas (árbol, lista y ficha), transferencias en Consulta › Buscar y en el Archivo
+--
+--  - fn_historias_arbol: Estado → Año → Nivel → Programa con cuántas historias hay (RF-AC-020).
+--  - fn_historias_listar: historias de un nodo o de una búsqueda (nombre, cédula o título de un
+--    documento), 20 por página, con el número de documentos.
+--  - fn_historia_documentos: documentos de una historia (título, fecha, archivo).
+--    Las tres exigen historias.consultar y respetan fn_puede_ver_historia (RN-AC-06: Registro
+--    Académico solo activas; Archivo Central y Secretaría General, todas). Sin IA (RN-AC-13).
+--  - fn_archivo_buscar: también busca transferencias (código, dependencia, año, quién la entregó,
+--    contenido), con cargas.transferencia, transferencias.recibir o documentos.consultar; un usuario
+--    de Dependencia solo ve las suyas.
+--  - fn_archivo_arbol: cada año de una dependencia cuenta también sus transferencias, y aparecen los
+--    años que solo tienen transferencias.
+-- =============================================================================
+
+create or replace function fn_historias_arbol(p_usuario_id bigint)
+returns jsonb
+language plpgsql
+as $$
+begin
+  perform fn_set_usuario_actual(p_usuario_id);
+  if not fn_catalogo_autorizar(p_usuario_id, 'historias.consultar', 'consultar', 'historia_academica', null) then
+    return jsonb_build_object('denegado', true, 'funcion', 'historias.consultar');
+  end if;
+  return coalesce((
+    with base as (
+      select h.estado::text as estado, h.anio::int as anio, n.id as nivel_id, n.nombre as nivel, n.tipo as nivel_tipo,
+             coalesce(n.orden, 100) as nivel_orden, p.id as programa_id, p.nombre as programa
+        from historia_academica h
+        join programa_academico p on p.id = h.programa_id
+        left join nivel_formacion n on n.id = p.nivel_id
+       where fn_puede_ver_historia(p_usuario_id, h.id)
+    )
+    select jsonb_agg(jsonb_build_object('estado', e.estado, 'total', e.total, 'anios', e.anios)
+                     order by case e.estado when 'graduado' then 1 when 'retirado' then 2 else 3 end)
+      from (
+        select b.estado, count(*)::int as total,
+               (select jsonb_agg(jsonb_build_object('anio', a.anio, 'total', a.total, 'niveles', a.niveles) order by a.anio desc nulls last)
+                  from (select b2.anio, count(*)::int as total,
+                               (select jsonb_agg(jsonb_build_object('nivel_id', nv.nivel_id, 'nivel', nv.nivel, 'tipo', nv.nivel_tipo,
+                                                                    'total', nv.total, 'programas', nv.programas) order by nv.nivel_orden, nv.nivel)
+                                  from (select b3.nivel_id, coalesce(b3.nivel, 'Sin nivel') as nivel, b3.nivel_tipo, min(b3.nivel_orden) as nivel_orden,
+                                               count(*)::int as total,
+                                               (select jsonb_agg(jsonb_build_object('programa_id', pr.programa_id, 'programa', pr.programa, 'total', pr.total) order by pr.programa)
+                                                  from (select b4.programa_id, b4.programa, count(*)::int as total
+                                                          from base b4
+                                                         where b4.estado = b.estado and b4.anio is not distinct from b2.anio
+                                                           and b4.nivel_id is not distinct from b3.nivel_id
+                                                         group by 1, 2) pr) as programas
+                                          from base b3
+                                         where b3.estado = b.estado and b3.anio is not distinct from b2.anio
+                                         group by b3.nivel_id, b3.nivel, b3.nivel_tipo) nv) as niveles
+                          from base b2 where b2.estado = b.estado group by b2.anio) a) as anios
+          from base b group by b.estado
+      ) e
+  ), '[]'::jsonb);
+end $$;
+
+create or replace function fn_historias_listar(
+  p_usuario_id bigint, p_filtros jsonb default '{}'::jsonb, p_pagina integer default 1, p_limite integer default 20)
+returns jsonb
+language plpgsql
+as $$
+declare
+  f jsonb := coalesce(p_filtros, '{}'::jsonb);
+  v_estado text := nullif(trim(f ->> 'estado'), '');
+  v_anio int := nullif(f ->> 'anio', '')::int;
+  v_nivel bigint := nullif(f ->> 'nivel_id', '')::bigint;
+  v_programa bigint := nullif(f ->> 'programa_id', '')::bigint;
+  v_q text := nullif(trim(f ->> 'q'), '');
+  v_limite int := least(greatest(coalesce(p_limite, 20), 1), 100);
+  v_offset int := (greatest(coalesce(p_pagina, 1), 1) - 1) * least(greatest(coalesce(p_limite, 20), 1), 100);
+begin
+  perform fn_set_usuario_actual(p_usuario_id);
+  if not fn_catalogo_autorizar(p_usuario_id, 'historias.consultar', 'consultar', 'historia_academica', null) then
+    return jsonb_build_object('denegado', true, 'funcion', 'historias.consultar');
+  end if;
+  return (
+    with filas as (
+      select h.id, h.estado::text as estado, h.anio::int as anio, e.apellidos, e.nombres, e.tipo_documento,
+             e.numero_documento, p.id as programa_id, p.nombre as programa, n.id as nivel_id, n.nombre as nivel,
+             (select count(*)::int from historia_documento hd where hd.historia_id = h.id and not hd.anulado) as documentos,
+             (select max(hd.cargado_en) from historia_documento hd where hd.historia_id = h.id and not hd.anulado) as ultimo_cargue
+        from historia_academica h
+        join estudiante e on e.id = h.estudiante_id
+        join programa_academico p on p.id = h.programa_id
+        left join nivel_formacion n on n.id = p.nivel_id
+       where fn_puede_ver_historia(p_usuario_id, h.id)
+         and (v_estado is null or h.estado::text = v_estado)
+         and (v_anio is null or h.anio = v_anio)
+         and (v_nivel is null or p.nivel_id = v_nivel)
+         and (v_programa is null or h.programa_id = v_programa)
+         and (v_q is null
+              or (e.apellidos || ' ' || e.nombres) ilike fn_patron_contiene(v_q)
+              or (e.nombres || ' ' || e.apellidos) ilike fn_patron_contiene(v_q)
+              or e.numero_documento = regexp_replace(v_q, '[^0-9A-Za-z]', '', 'g')
+              or exists (select 1 from historia_documento hd where hd.historia_id = h.id and not hd.anulado
+                                                                and hd.descripcion ilike fn_patron_contiene(v_q)))
+    )
+    select jsonb_build_object(
+      'total', (select count(*) from filas),
+      'pagina', greatest(coalesce(p_pagina, 1), 1),
+      'limite', v_limite,
+      'filas', coalesce((select jsonb_agg(to_jsonb(r) order by r.apellidos, r.nombres, r.id)
+                           from (select * from filas order by apellidos, nombres, id limit v_limite offset v_offset) r), '[]'::jsonb))
+  );
+end $$;
+
+create or replace function fn_historia_documentos(p_usuario_id bigint, p_historia_id bigint)
+returns jsonb
+language plpgsql
+as $$
+begin
+  perform fn_set_usuario_actual(p_usuario_id);
+  if not fn_catalogo_autorizar(p_usuario_id, 'historias.consultar', 'consultar', 'historia_academica', p_historia_id::text)
+     or not fn_puede_ver_historia(p_usuario_id, p_historia_id) then
+    return jsonb_build_object('denegado', true, 'funcion', 'historias.consultar');
+  end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', hd.id, 'titulo', coalesce(hd.descripcion, 'Documento'), 'fecha', hd.fecha_documento,
+             'cargado_en', hd.cargado_en, 'archivo_id', hd.archivo_id, 'archivo_nombre', a.nombre_original,
+             'paginas', a.paginas) order by hd.cargado_en desc)
+      from historia_documento hd
+      join archivo a on a.id = hd.archivo_id
+     where hd.historia_id = p_historia_id and not hd.anulado
+  ), '[]'::jsonb);
+end $$;
+
+create or replace function fn_archivo_buscar(
+  p_usuario_id bigint, p_filtros jsonb default '{}'::jsonb, p_pagina integer default 1, p_limite integer default 20)
+returns jsonb
+language plpgsql
+as $$
+declare
+  f jsonb := coalesce(p_filtros, '{}'::jsonb);
+  v_scope bigint;   -- dependencia del usuario si es del perfil Dependencia (null = todas)
+  v_alcance text := coalesce(nullif(trim(f ->> 'alcance'), ''), 'todo');
+  v_incluir_docs boolean;
+  v_incluir_coms boolean;
+  v_incluir_hist boolean;
+  v_incluir_trf boolean;
+  v_anio int := nullif(f ->> 'anio', '')::int;
+  v_mes int := nullif(f ->> 'mes', '')::int;
+  v_dia int := nullif(f ->> 'dia', '')::int;
+  v_dep bigint := nullif(f ->> 'dependencia_id', '')::bigint;
+  v_asunto_id bigint := nullif(f ->> 'asunto_id', '')::bigint;
+  v_tipo tipo_comunicacion;
+  v_asunto text := nullif(trim(f ->> 'asunto'), '');
+  v_consecutivo text := nullif(ltrim(trim(f ->> 'consecutivo'), '0'), '');
+  v_persona text := nullif(trim(f ->> 'persona'), '');
+  v_trd text := nullif(trim(f ->> 'trd'), '');
+  v_texto text := nullif(trim(f ->> 'texto'), '');
+  v_limite int := least(greatest(coalesce(p_limite, 20), 1), 100);
+  v_offset int := (greatest(coalesce(p_pagina, 1), 1) - 1) * least(greatest(coalesce(p_limite, 20), 1), 100);
+begin
+  if v_alcance not in ('todo', 'documentos', 'comunicaciones', 'historias', 'transferencias') then
+    raise exception '[campo:alcance|tipo:lista] Alcance no válido: todo, documentos, comunicaciones, historias o transferencias' using errcode = '22023';
+  end if;
+  if v_mes is not null and v_mes not between 1 and 12 then
+    raise exception '[campo:mes|tipo:rango] Mes no válido (1 a 12)' using errcode = '22023';
+  end if;
+  if v_dia is not null and v_dia not between 1 and 31 then
+    raise exception '[campo:dia|tipo:rango] Día no válido (1 a 31)' using errcode = '22023';
+  end if;
+  if nullif(trim(f ->> 'tipo'), '') is not null then
+    v_tipo := fn_historico_tipo(f ->> 'tipo');
+    if v_tipo is null then
+      raise exception '[campo:tipo|tipo:lista] Tipo no válido: entrada, salida o interno' using errcode = '22023';
+    end if;
+  end if;
+
+  -- Cada parte exige su permiso; sin ninguno, la búsqueda se niega y queda auditada.
+  perform fn_set_usuario_actual(p_usuario_id);
+  v_incluir_docs := v_alcance in ('todo', 'documentos') and fn_tiene_permiso(p_usuario_id, 'documentos.consultar');
+  v_incluir_coms := v_alcance in ('todo', 'comunicaciones') and fn_tiene_permiso(p_usuario_id, 'comunicaciones.consultar');
+  v_incluir_hist := v_alcance in ('todo', 'historias') and fn_tiene_permiso(p_usuario_id, 'historias.consultar');
+  v_incluir_trf := v_alcance in ('todo', 'transferencias') and (fn_tiene_permiso(p_usuario_id, 'cargas.transferencia')
+                   or fn_tiene_permiso(p_usuario_id, 'transferencias.recibir') or fn_tiene_permiso(p_usuario_id, 'documentos.consultar'));
+  if not v_incluir_docs and not v_incluir_coms and not v_incluir_hist and not v_incluir_trf then
+    perform fn_catalogo_autorizar(p_usuario_id,
+      case v_alcance when 'comunicaciones' then 'comunicaciones.consultar'
+                     when 'historias' then 'historias.consultar'
+                     when 'transferencias' then 'cargas.transferencia' else 'documentos.consultar' end,
+      'consultar', 'busqueda', null);
+    return jsonb_build_object('denegado', true,
+      'funcion', case v_alcance when 'comunicaciones' then 'comunicaciones.consultar'
+                                when 'historias' then 'historias.consultar'
+                                when 'transferencias' then 'cargas.transferencia' else 'documentos.consultar' end);
+  end if;
+  -- Las comunicaciones no tienen asunto ni TRD: con esos filtros solo se buscan documentos.
+  v_incluir_coms := v_incluir_coms and v_asunto_id is null and v_trd is null;
+  -- Las historias se buscan por título, nombre o cédula (texto o persona) y año; no tienen dependencia,
+  -- tipo, asunto, TRD ni consecutivo. Sin algo escrito no se listan (Ley 1581: solo lo buscado).
+  v_incluir_hist := v_incluir_hist and coalesce(v_persona, v_texto) is not null
+                    and v_dep is null and v_tipo is null and v_asunto_id is null and v_asunto is null
+                    and v_trd is null and v_consecutivo is null and v_mes is null and v_dia is null;
+  -- Las transferencias no tienen tipo de comunicación, asunto, TRD ni fecha por mes y día.
+  v_incluir_trf := v_incluir_trf and v_tipo is null and v_asunto_id is null and v_asunto is null
+                   and v_trd is null and v_mes is null and v_dia is null;
+  select case when u.perfil = 'dependencia' then coalesce(u.dependencia_id, -1) end into v_scope
+    from usuario u where u.id = p_usuario_id;
+
+  return (
+    with resultados as (
+      select 'documento'::text as origen, doc.id, doc.consecutivo, doc.anio::int as anio, doc.fecha_documento as fecha,
+             doc.tipo_comunicacion::text as tipo, coalesce(doc.titulo, ar.nombre_original, '(sin título)') as titulo,
+             case when doc.tipo_comunicacion = 'ENT' then coalesce(doc.remitente, doc.destinatario)
+                  else coalesce(doc.destinatario, doc.remitente) end as contraparte,
+             d.nombre as dependencia, doc.dependencia_id, a.nombre as asunto, t.codigo as trd,
+             doc.archivo_id::text as archivo_id, doc.carro, doc.estante, doc.bandeja, doc.caja, doc.carpeta,
+             null::text as estado, null::text as consecutivo_original
+        from documento doc
+        join dependencia d on d.id = doc.dependencia_id
+        left join asunto a on a.id = doc.asunto_id
+        left join trd t on t.id = a.trd_id
+        left join archivo ar on ar.id = doc.archivo_id
+       where v_incluir_docs and doc.estado = 'clasificado'
+         and (v_scope is null or doc.dependencia_id = v_scope)
+         and (v_anio is null or doc.anio = v_anio)
+         and (v_mes is null or extract(month from doc.fecha_documento) = v_mes)
+         and (v_dia is null or extract(day from doc.fecha_documento) = v_dia)
+         and (v_dep is null or doc.dependencia_id = v_dep)
+         and (v_tipo is null or doc.tipo_comunicacion = v_tipo)
+         and (v_asunto_id is null or doc.asunto_id = v_asunto_id)
+         and (v_asunto is null or a.nombre ilike fn_patron_contiene(v_asunto))
+         and (v_consecutivo is null or ltrim(split_part(doc.consecutivo, '/', 1), '0') = v_consecutivo)
+         and (v_persona is null or doc.remitente ilike fn_patron_contiene(v_persona)
+              or doc.destinatario ilike fn_patron_contiene(v_persona))
+         and (v_trd is null or t.codigo like replace(replace(v_trd, '%', ''), '_', '\_') || '%')
+         and (v_texto is null or doc.titulo ilike fn_patron_contiene(v_texto)
+              or doc.observaciones ilike fn_patron_contiene(v_texto) or doc.consecutivo ilike fn_patron_contiene(v_texto))
+      union all
+      select 'comunicacion', c.id, c.consecutivo, c.anio::int, (c.fecha_recepcion at time zone 'America/Bogota')::date,
+             c.tipo::text, c.asunto,
+             case when c.tipo = 'ENT' then c.remitente_nombre else c.destinatario_nombre end,
+             d.nombre, c.dependencia_id, null, null, null, null, null, null, null, null, c.estado::text, c.consecutivo_original
+        from comunicacion c
+        left join dependencia d on d.id = c.dependencia_id
+       where v_incluir_coms and c.estado <> 'anulada'
+         and (v_scope is null or c.dependencia_id = v_scope)
+         and (v_anio is null or c.anio = v_anio)
+         and (v_mes is null or extract(month from c.fecha_recepcion at time zone 'America/Bogota') = v_mes)
+         and (v_dia is null or extract(day from c.fecha_recepcion at time zone 'America/Bogota') = v_dia)
+         and (v_dep is null or c.dependencia_id = v_dep)
+         and (v_tipo is null or c.tipo = v_tipo)
+         and (v_asunto is null or c.asunto ilike fn_patron_contiene(v_asunto))
+         and (v_consecutivo is null or ltrim(coalesce(c.consecutivo_original, ''), '0') = v_consecutivo
+              or (v_consecutivo ~ '^\d{1,9}$' and c.numero = v_consecutivo::int and c.origen <> 'historico'))
+         and (v_persona is null or c.remitente_nombre ilike fn_patron_contiene(v_persona)
+              or c.destinatario_nombre ilike fn_patron_contiene(v_persona)
+              or c.remitente_correo ilike fn_patron_contiene(v_persona))
+         and (v_texto is null or c.asunto ilike fn_patron_contiene(v_texto) or c.consecutivo ilike fn_patron_contiene(v_texto))
+      union all
+      -- Historias académicas: un resultado por documento de la historia.
+      select 'historia', hd.id, null, h.anio::int, coalesce(hd.fecha_documento, (hd.cargado_en at time zone 'America/Bogota')::date),
+             null, coalesce(hd.descripcion, 'Historia académica'),
+             e.apellidos || ' ' || e.nombres, p.nombre, null, null, null,
+             hd.archivo_id::text, null, null, null, null, null, h.estado::text, null
+        from historia_documento hd
+        join historia_academica h on h.id = hd.historia_id
+        join estudiante e on e.id = h.estudiante_id
+        join programa_academico p on p.id = h.programa_id
+       where v_incluir_hist and not hd.anulado
+         and fn_puede_ver_historia(p_usuario_id, h.id)
+         and (v_anio is null or h.anio = v_anio)
+         and (
+           (v_persona is not null and ((e.apellidos || ' ' || e.nombres) ilike fn_patron_contiene(v_persona)
+              or (e.nombres || ' ' || e.apellidos) ilike fn_patron_contiene(v_persona)
+              or e.numero_documento = regexp_replace(v_persona, '[^0-9A-Za-z]', '', 'g')))
+           or (v_texto is not null and ((e.apellidos || ' ' || e.nombres) ilike fn_patron_contiene(v_texto)
+              or (e.nombres || ' ' || e.apellidos) ilike fn_patron_contiene(v_texto)
+              or e.numero_documento = regexp_replace(v_texto, '[^0-9A-Za-z]', '', 'g')
+              or hd.descripcion ilike fn_patron_contiene(v_texto)))
+         )
+      union all
+      -- Transferencias: código, dependencia, año, quién la entregó, contenido y descripción.
+      select 'transferencia', t.id, t.codigo, t.anio::int, (t.registrado_en at time zone 'America/Bogota')::date,
+             null, 'Transferencia ' || case t.tipo::text when 'fisica' then 'física' when 'digital' then 'digital' else t.tipo::text end
+                   || coalesce(' · ' || nullif(t.contenido, ''), ''),
+             t.funcionario_entrega, d.nombre, t.dependencia_id, null, null,
+             t.acta_archivo_id::text, t.carro, t.estante, t.bandeja, null, null, t.estado::text, null
+        from transferencia t
+        join dependencia d on d.id = t.dependencia_id
+       where v_incluir_trf and t.anulado_en is null
+         and (v_scope is null or t.dependencia_id = v_scope)
+         and (v_anio is null or t.anio = v_anio)
+         and (v_dep is null or t.dependencia_id = v_dep)
+         and (v_consecutivo is null or t.codigo ilike fn_patron_contiene(v_consecutivo))
+         and (v_persona is null or t.funcionario_entrega ilike fn_patron_contiene(v_persona))
+         and (v_texto is null or t.codigo ilike fn_patron_contiene(v_texto) or t.contenido ilike fn_patron_contiene(v_texto)
+              or t.descripcion ilike fn_patron_contiene(v_texto) or t.funcionario_entrega ilike fn_patron_contiene(v_texto)
+              or d.nombre ilike fn_patron_contiene(v_texto))
+    )
+    select jsonb_build_object(
+      'total', (select count(*) from resultados),
+      'pagina', greatest(coalesce(p_pagina, 1), 1),
+      'limite', v_limite,
+      'incluye', jsonb_build_object('documentos', v_incluir_docs, 'comunicaciones', v_incluir_coms, 'historias', v_incluir_hist,
+                                     'transferencias', v_incluir_trf),
+      'filas', coalesce((select jsonb_agg(to_jsonb(r) order by r.fecha desc nulls last, r.origen, r.id desc)
+                           from (select * from resultados order by fecha desc nulls last, origen, id desc
+                                 limit v_limite offset v_offset) r), '[]'::jsonb))
+  );
+end $$;
+
+create or replace function fn_archivo_arbol(p_usuario_id bigint)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_alcance record;
+begin
+  select * into v_alcance from fn_alcance_consulta(p_usuario_id, 'documentos.consultar', 'archivo');
+  if not v_alcance.permitido then
+    return jsonb_build_object('denegado', true, 'funcion', 'documentos.consultar');
+  end if;
+
+  return coalesce((
+    with conteos as (
+      select doc.dependencia_id, doc.anio::int as anio, doc.asunto_id, count(*)::int as n
+        from documento doc
+       where doc.estado = 'clasificado'
+         and (v_alcance.dependencia_id is null or doc.dependencia_id = v_alcance.dependencia_id)
+       group by 1, 2, 3
+    ),
+    trf as (
+      select t.dependencia_id, t.anio::int as anio, count(*)::int as n
+        from transferencia t
+       where t.anulado_en is null
+         and (v_alcance.dependencia_id is null or t.dependencia_id = v_alcance.dependencia_id)
+       group by 1, 2
+    ),
+    anios as (
+      select dependencia_id, anio from conteos union select dependencia_id, anio from trf
+    )
+    select jsonb_agg(jsonb_build_object(
+             'dependencia_id', d.id, 'codigo', d.codigo, 'nombre', d.nombre,
+             'total', coalesce((select sum(c.n) from conteos c where c.dependencia_id = d.id), 0),
+             'transferencias', coalesce((select sum(t.n) from trf t where t.dependencia_id = d.id), 0),
+             'anios', coalesce((
+               select jsonb_agg(jsonb_build_object(
+                        'anio', y.anio,
+                        'total', coalesce((select sum(c.n) from conteos c where c.dependencia_id = d.id and c.anio = y.anio), 0),
+                        'transferencias', coalesce((select t.n from trf t where t.dependencia_id = d.id and t.anio = y.anio), 0),
+                        'asuntos', coalesce((
+                          select jsonb_agg(jsonb_build_object('asunto_id', a.id, 'nombre', a.nombre, 'trd', tr.codigo, 'total', c.n)
+                                           order by a.nombre)
+                            from conteos c
+                            join asunto a on a.id = c.asunto_id
+                            left join trd tr on tr.id = a.trd_id
+                           where c.dependencia_id = d.id and c.anio = y.anio), '[]'::jsonb))
+                      order by y.anio desc)
+                 from anios y where y.dependencia_id = d.id), '[]'::jsonb))
+           order by d.nombre)
+      from dependencia d
+     where (v_alcance.dependencia_id is null or d.id = v_alcance.dependencia_id)
+       and (d.estado = 'activo' or exists (select 1 from anios y where y.dependencia_id = d.id))
+  ), '[]'::jsonb);
+end $$;
+
+-- Solo el backend (service_role) llama estas funciones.
+do $$
+declare f text;
+begin
+  foreach f in array array['fn_historias_arbol(bigint)', 'fn_historias_listar(bigint, jsonb, integer, integer)',
+                           'fn_historia_documentos(bigint, bigint)', 'fn_archivo_buscar(bigint, jsonb, integer, integer)',
+                           'fn_archivo_arbol(bigint)']
+  loop
+    execute format('revoke execute on function %s from public', f);
+    if exists (select 1 from pg_roles where rolname = 'anon') then
+      execute format('revoke execute on function %s from anon', f);
+    end if;
+    if exists (select 1 from pg_roles where rolname = 'authenticated') then
+      execute format('revoke execute on function %s from authenticated', f);
+    end if;
+    if exists (select 1 from pg_roles where rolname = 'service_role') then
+      execute format('grant execute on function %s to service_role', f);
+    end if;
+  end loop;
+end $$;
+
+
+-- ═════════════════════════════════════════════════════════════════════════════
 -- Datos base: seed.sql
 -- ═════════════════════════════════════════════════════════════════════════════
 -- =============================================================================

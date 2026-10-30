@@ -15,6 +15,7 @@ import { SolicitudInvalida } from "./n8n";
 import { columnaDuplicada, errorFormulario, errorResponse, errorSistema } from "./errors";
 
 export type SlugCatalogo =
+  | "niveles"
   | "dependencias"
   | "trd"
   | "asuntos"
@@ -126,15 +127,32 @@ const CONFIGS: Record<SlugCatalogo, TablaConfig> = {
     slug: "programas",
     tabla: "programa_academico",
     ordenPorDefecto: "nombre",
-    select: "*",
+    select: "*, nivel_ref:nivel_id(id, nombre, tipo)",
     buscarColumnas: ["codigo", "nombre"],
-    filtros: ["nivel"],
+    filtros: ["nivel", "nivel_id"],
     creable: true,
     importable: true,
+    // El nivel sale de Catálogos › Niveles (migración 27); "nivel" (texto) sigue sirviendo en la importación.
     campos: [
       { columna: "codigo", tipo: "texto" },
       { columna: "nombre", tipo: "texto", obligatorio: true },
-      { columna: "nivel", tipo: "enum", obligatorio: true, enumValues: NIVEL_ACADEMICO },
+      { columna: "nivel_id", tipo: "entero" },
+      { columna: "nivel", tipo: "enum", enumValues: NIVEL_ACADEMICO },
+    ],
+  },
+  niveles: {
+    slug: "niveles",
+    tabla: "nivel_formacion",
+    ordenPorDefecto: "orden",
+    select: "*",
+    buscarColumnas: ["nombre", "codigo"],
+    filtros: ["tipo"],
+    creable: true,
+    importable: false,
+    campos: [
+      { columna: "nombre", tipo: "texto", obligatorio: true },
+      { columna: "tipo", tipo: "enum", obligatorio: true, enumValues: ["pregrado", "posgrado"] },
+      { columna: "orden", tipo: "entero" },
     ],
   },
   ubicaciones: {
@@ -320,12 +338,30 @@ export interface ListarOpciones {
   filtros?: Record<string, string>;
 }
 
+/** Falta una relación o columna de una migración nueva (p. ej. nivel_id antes de la migración 27). */
+const faltaRelacion = (e: { message: string; code?: string }) =>
+  e.code === "PGRST200" || e.code === "42703" || /relationship|does not exist|schema cache/i.test(e.message);
+
 export async function listarCatalogo(cfg: TablaConfig, opciones: ListarOpciones = {}) {
+  try {
+    return await listarCon(cfg, cfg.select, opciones);
+  } catch (e) {
+    // Mientras no se aplique la migración que crea la relación, se lista sin ella (no se rompe la pantalla).
+    const err = (e as { __errorBase?: { message: string; code?: string } }).__errorBase;
+    if (cfg.select !== "*" && err && faltaRelacion(err)) {
+      console.warn(`Catálogo ${cfg.slug}: falta una migración (${err.message}); se lista sin relaciones.`);
+      return listarCon(cfg, "*", { ...opciones, filtros: Object.fromEntries(Object.entries(opciones.filtros ?? {}).filter(([k]) => k !== "nivel_id")) });
+    }
+    throw e;
+  }
+}
+
+async function listarCon(cfg: TablaConfig, select: string, opciones: ListarOpciones) {
   const pagina = Math.max(1, Number(opciones.pagina) || 1);
   const limite = Math.max(1, Math.min(1000, Number(opciones.limite) || 50));
   const desde = (pagina - 1) * limite;
 
-  let query = supabase.from(cfg.tabla).select(cfg.select, { count: "exact" });
+  let query = supabase.from(cfg.tabla).select(select, { count: "exact" });
   if (opciones.estado === "activo" || opciones.estado === "inactivo") query = query.eq("estado", opciones.estado);
   if (opciones.buscar?.trim()) {
     const termino = opciones.buscar.trim().replace(/[%_,()]/g, " ");
@@ -337,7 +373,7 @@ export async function listarCatalogo(cfg: TablaConfig, opciones: ListarOpciones 
   query = query.order(cfg.ordenPorDefecto, { ascending: true });
 
   const { data, error, count } = await query.range(desde, desde + limite - 1);
-  if (error) throw errorDeBase(error);
+  if (error) throw Object.assign(errorDeBase(error), { __errorBase: error });
   const total = count ?? 0;
   return { datos: data ?? [], total, pagina, limite, totalPaginas: Math.max(1, Math.ceil(total / limite)) };
 }

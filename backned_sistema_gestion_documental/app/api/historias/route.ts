@@ -1,4 +1,7 @@
 /**
+ * GET  /api/historias?estado=&anio=&nivel_id=&programa_id=&q=&pagina=
+ *      Historias académicas de un nodo del árbol o de una búsqueda (nombre, cédula o título de un
+ *      documento), 20 por página (RF-AC-020). historias.consultar; RA solo activas. fn_historias_listar (migración 28).
  * POST /api/historias  (multipart: archivo, programa_id, estado (graduado|retirado|activa), anio,
  *                       titulo, apellidos, nombres, numero_documento, tipo_documento? = CC)
  * Guarda UN documento en la historia académica de un estudiante (carga D, RF-AC-021).
@@ -18,12 +21,40 @@ import { errorResponse, forbidden, handleError, jsonResponse } from "../../../li
 import { supabase } from "../../../lib/supabase";
 
 const MIGRACION = "20261025000000_historias_carga_busqueda.sql";
+const MIGRACION_LISTA = "20261028000000_historias_transferencias_busqueda.sql";
 const EXT_PERMITIDAS = ["pdf", "jpg", "jpeg", "png", "tif", "tiff"];
 const MAX_BYTES = 50 * 1024 * 1024;
 
 function texto(form: FormData, campo: string): string | undefined {
   const raw = form.get(campo);
   return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : undefined;
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const usuario = await obtenerUsuarioAutenticado(request);
+    const sp = request.nextUrl.searchParams;
+    const filtros: Record<string, string> = {};
+    for (const k of ["estado", "anio", "nivel_id", "programa_id", "q"]) {
+      const v = sp.get(k)?.trim();
+      if (v) filtros[k] = v;
+    }
+    if (filtros.estado && !["activa", "retirado", "graduado"].includes(filtros.estado)) {
+      throw new SolicitudInvalida("estado debe ser activa, retirado o graduado", "estado", "lista");
+    }
+    for (const k of ["anio", "nivel_id", "programa_id"]) {
+      if (filtros[k] && !/^\d+$/.test(filtros[k])) throw new SolicitudInvalida(`${k} debe ser un número`, k, "formato");
+    }
+    const pagina = Math.max(1, Number(sp.get("pagina") ?? "1") || 1);
+    return jsonResponse(await rpc("fn_historias_listar", {
+      p_usuario_id: usuario.id, p_filtros: filtros, p_pagina: pagina, p_limite: 20,
+    }, MIGRACION_LISTA));
+  } catch (err) {
+    if (err instanceof SolicitudInvalida) {
+      return errorResponse("Datos inválidos", 400, { detalle: err.message, campo: err.campo, tipo: err.tipo });
+    }
+    return handleError(err);
+  }
 }
 
 export async function POST(request: NextRequest) {
