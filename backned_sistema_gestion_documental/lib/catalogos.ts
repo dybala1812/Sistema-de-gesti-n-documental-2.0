@@ -151,7 +151,7 @@ const CONFIGS: Record<SlugCatalogo, TablaConfig> = {
     importable: false,
     campos: [
       { columna: "nombre", tipo: "texto", obligatorio: true },
-      { columna: "tipo", tipo: "enum", obligatorio: true, enumValues: ["pregrado", "posgrado"] },
+      { columna: "tipo", tipo: "enum", obligatorio: true, enumValues: ["pregrado", "tecnico", "posgrado"] },
       { columna: "orden", tipo: "entero" },
     ],
   },
