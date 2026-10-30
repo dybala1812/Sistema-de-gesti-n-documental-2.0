@@ -34,12 +34,21 @@ export interface ClasificadoDTO {
   trd: string | null;
   caja: string | null;
   carpeta: string | null;
+  /** Bodega · estante · módulo, si el documento tiene ubicación del catálogo. */
+  ubicacion: UbicacionDTO | null;
   origen: string | null;
   estado: string;
   archivo_id: string;
   archivo_nombre: string | null;
   paginas: number | null;
   cargado_en: string | null;
+}
+
+export interface UbicacionDTO {
+  id: number;
+  bodega: string;
+  estante: string | null;
+  modulo: string | null;
 }
 
 type Rel<T> = T | T[] | null | undefined;
@@ -63,6 +72,7 @@ export interface Fila {
   asunto: Rel<{ nombre: string; trd: Rel<{ codigo: string }> }>;
   transferencia: Rel<{ codigo: string }>;
   archivo: Rel<{ paginas: number | null; nombre_original: string }>;
+  ubicacion: Rel<UbicacionDTO>;
 }
 
 export const SELECT = `
@@ -71,7 +81,8 @@ export const SELECT = `
   dependencia:dependencia_id ( id, nombre ),
   asunto:asunto_id ( nombre, trd:trd_id ( codigo ) ),
   transferencia:transferencia_id ( codigo ),
-  archivo:archivo_id ( paginas, nombre_original )
+  archivo:archivo_id ( paginas, nombre_original ),
+  ubicacion:ubicacion_id ( id, bodega, estante, modulo )
 `;
 
 /** Acepta ENT/SAL/INT o entrada/salida/interno, en mayúsculas o minúsculas. */
@@ -108,6 +119,7 @@ export function aDTO(f: Fila): ClasificadoDTO {
     trd: trd?.codigo ?? null,
     caja: f.caja,
     carpeta: f.carpeta,
+    ubicacion: uno(f.ubicacion),
     origen: transf ? `Transferencia ${transf.codigo}` : null,
     estado: f.estado,
     archivo_id: f.archivo_id,

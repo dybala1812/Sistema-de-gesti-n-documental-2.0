@@ -42,6 +42,10 @@ export interface DatosNuevoDocumento {
   fecha?: string;
   caja?: string;
   carpeta?: string;
+  /** Bodega · estante · módulo del catálogo de ubicaciones físicas (opcional). */
+  ubicacion_id?: number;
+  /** Por defecto "documento_individual" (carga A); "app_movil" si se escaneó con la app del celular (carga F). */
+  origen?: "documento_individual" | "app_movil";
 }
 
 async function auditar(usuarioId: number | null, accion: string, documentoId: number, valores: Record<string, unknown>) {
@@ -70,6 +74,7 @@ export async function crearDocumentoIndividual(
     throw new SolicitudInvalida("tipo debe ser Entrada, Salida o Interno", "tipo", "valor");
   }
 
+  const origen = datos.origen ?? "documento_individual";
   const buffer = Buffer.from(await archivo.arrayBuffer());
   const hash = createHash("sha256").update(buffer).digest("hex");
 
@@ -81,7 +86,7 @@ export async function crearDocumentoIndividual(
 
   const guardado = await guardarArchivo(
     buffer, archivo.name, CATEGORIA_ARCHIVO,
-    { origen: "documento_individual", dependencia_id: datos.dependencia_id, anio: datos.anio },
+    { origen, dependencia_id: datos.dependencia_id, anio: datos.anio },
     usuario,
   );
   const g = guardado as unknown as { id?: string; archivo_id?: string; archivo?: { id?: string } };
@@ -107,8 +112,9 @@ export async function crearDocumentoIndividual(
       fecha_documento: datos.fecha ?? null,
       caja: datos.caja?.trim() || null,
       carpeta: datos.carpeta?.trim() || null,
+      ubicacion_id: datos.ubicacion_id ?? null,
       estado: completo ? "clasificado" : "por_clasificar",
-      origen: "documento_individual",
+      origen,
       cargado_por: uid,
       clasificado_por: completo ? uid : null,
       clasificado_en: completo ? ahora : null,
@@ -118,6 +124,6 @@ export async function crearDocumentoIndividual(
   if (error) throw error;
 
   const dto = aDTO(data as unknown as Fila);
-  await auditar(uid, "documento.cargar", dto.id, { origen: "documento_individual", estado: dto.estado, archivo: archivo.name });
+  await auditar(uid, "documento.cargar", dto.id, { origen, estado: dto.estado, archivo: archivo.name });
   return dto;
 }

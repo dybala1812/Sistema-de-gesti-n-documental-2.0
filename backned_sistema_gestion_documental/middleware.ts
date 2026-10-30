@@ -17,9 +17,14 @@ function getOrigin(request: NextRequest): string | null {
   return request.headers.get("origin");
 }
 
+// Solo en desarrollo: el frontend abierto desde otro equipo de la red local (p. ej. la app móvil
+// /movil en el celular), en cualquier puerto de Vite. En producción solo vale ALLOWED_ORIGINS.
+const RED_LOCAL = /^https?:\/\/(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d{2,5})?$/;
+const ES_DESARROLLO = process.env.NODE_ENV !== "production";
+
 function isAllowed(origin: string | null): boolean {
   if (!origin) return false;
-  return ALLOWED_ORIGINS.includes(origin);
+  return ALLOWED_ORIGINS.includes(origin) || (ES_DESARROLLO && RED_LOCAL.test(origin));
 }
 
 export function middleware(request: NextRequest) {

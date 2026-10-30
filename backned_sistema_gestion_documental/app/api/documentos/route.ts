@@ -1,6 +1,6 @@
 /**
  * GET  /api/documentos?estado=clasificado|por_clasificar&q=&dependencia_id=&limite=
- * POST /api/documentos  (multipart: archivo, dependencia_id, anio, asunto_id?, tipo?, consecutivo?, fecha?, caja?, carpeta?)
+ * POST /api/documentos  (multipart: archivo, dependencia_id, anio, asunto_id?, tipo?, consecutivo?, fecha?, caja?, carpeta?, ubicacion_id?, origen?=app_movil)
  * Va en: app/api/documentos/route.ts
  */
 import { NextRequest } from "next/server";
@@ -82,6 +82,9 @@ export async function POST(request: NextRequest) {
         fecha: textoForm(form, "fecha"),
         caja: textoForm(form, "caja"),
         carpeta: textoForm(form, "carpeta"),
+        ubicacion_id: enteroForm(form, "ubicacion_id"),
+        // Carga F: el documento se escaneó con la app del celular (/movil).
+        origen: textoForm(form, "origen") === "app_movil" ? "app_movil" : undefined,
       },
       usuario,
     );
