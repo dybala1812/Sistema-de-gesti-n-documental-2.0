@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Tablero Sprint 1 — SGD</title>
+<style>
+  :root { --navy:#1e3a5f; --orange:#e8740e; --gold:#c89b14; --text:#2c3e50; --muted:#6b7a8d; --beige:#f3ede1; --border:rgba(30,58,95,0.12); }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#fff; font-family:"Segoe UI",Calibri,Arial,sans-serif; color:var(--text); }
+  .wrap { width:1400px; padding:24px 28px; }
+  header { display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid var(--navy); padding-bottom:10px; margin-bottom:16px; }
+  h1 { margin:0; font-size:22px; color:var(--navy); }
+  .sub { font-size:13px; color:var(--muted); margin-top:4px; }
+  .badge { background:var(--navy); color:#fff; font-weight:700; font-size:14px; padding:6px 14px; border-radius:6px; }
+  .badge.cierre { background:var(--orange); }
+  .board { display:grid; grid-template-columns:1fr 1.25fr 1.25fr 1.25fr 1fr; gap:12px; }
+  .col { background:var(--beige); border:1px solid var(--border); border-radius:8px; padding:10px; min-height:520px; }
+  .col h2 { margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--navy); display:flex; justify-content:space-between; }
+  .col h2 span { background:#fff; border:1px solid var(--border); border-radius:10px; padding:0 8px; font-size:12px; }
+  .card { background:#fff; border:1px solid var(--border); border-left:4px solid var(--navy); border-radius:6px; padding:8px 10px; margin-bottom:8px; }
+  .card.alta { border-left-color:var(--orange); }
+  .card .id { font-size:11px; font-weight:700; color:var(--navy); display:flex; justify-content:space-between; }
+  .card .id em { font-style:normal; color:var(--muted); font-weight:600; }
+  .card .t { font-size:12.5px; margin-top:3px; line-height:1.3; }
+  .card .n { font-size:11px; color:var(--muted); margin-top:4px; }
+  .mini { font-size:11.5px; color:var(--muted); padding:5px 8px; background:#fff; border-radius:5px; margin-bottom:5px; border:1px solid var(--border); }
+  .empty { font-size:12px; color:var(--muted); font-style:italic; text-align:center; padding:20px 0; }
+  footer { margin-top:12px; font-size:12px; color:var(--muted); display:flex; gap:18px; }
+  footer i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:middle; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Sistema de Gestión Documental · Módulo Archivo Central — Sprint 1</h1>
+      <div class="sub" id="sub"></div>
+    </div>
+    <div class="badge" id="badge"></div>
+  </header>
+  <div class="board" id="board"></div>
+  <footer>
+    <span><i style="background:var(--orange)"></i>Prioridad alta</span>
+    <span><i style="background:var(--navy)"></i>Prioridad media / sin definir</span>
+    <span id="totales"></span>
+  </footer>
+</div>
+<script>
+const T = {
+  "SGD-007": { t:"Esquema de BD en Supabase: tablas, RLS, consecutivos ENT/SAL/INT atómicos, pruebas de concurrencia", p:"alta" },
+  "SGD-008": { t:"Estructura backend, autenticación con NOVA y servicio de archivos por id (/api/archivos)", p:"alta" },
+  "SGD-040": { t:"Recepción automática de correos (F1): Message-ID, consecutivo ENT, acuse de recibo", p:"alta", pts:8 },
+  "SGD-041": { t:"Remitir a dependencia (F2), registrar su respuesta y devolver", p:"alta", pts:8 },
+  "SGD-042": { t:"Responder al remitente (F3), crear SAL enlazada y cerrar", p:"alta", pts:5 },
+  "SGD-080": { t:"Frontend Comunicaciones en el Panel de Área de NOVA: Bandeja, detalle, sin asociar, histórico", p:"alta" },
+  "SGD-020": { t:"Centro de cargas: asistente de 4 pasos, lotes con avance, informe y reintento", p:"alta", pts:8 },
+  "SGD-022": { t:"Transferencia física: FUID, inventario por caja, regla año − 2", p:"alta", pts:8 },
+  "SGD-030": { t:"Bandejas Por clasificar / Clasificados con visor y formulario", p:"alta", pts:5 },
+};
+const backlog = ["SGD-000 Firma del F-02","SGD-001 Preguntas abiertas","SGD-002 Validar mockups","SGD-005 Permisos y auditoría","SGD-010 Dependencias y TRD","SGD-012 Usuarios y plantillas","SGD-021 Carga individual","SGD-023 Transferencia digital","SGD-032 Árbol y búsqueda","SGD-043 Recordatorios (F4)","SGD-044 Histórico de comunicaciones","SGD-050 Historias académicas","SGD-051 Carga masiva historias","SGD-060 PWA de escaneo","SGD-070 Pruebas de RNF"];
+
+const notas = {
+  "SGD-007": "17 migraciones · probar_local.sh OK · 40/40 consecutivos concurrentes",
+  "SGD-008": "19 APIs /api/n8n/* + /api/archivos · tsc/eslint OK",
+  "SGD-040": "F1 conectado al backend · F5 envío de correo",
+  "SGD-041": "F2 remitir · varias respuestas por dependencia (mig. 15)",
+  "SGD-042": "F3 responder · responder directo (mig. 12)",
+  "SGD-080": "Probado en navegador escritorio y móvil · visor de adjuntos",
+  "SGD-020": "Frontend en construcción (commits 13–14 oct)",
+  "SGD-022": "Frontend en construcción (commits 13–14 oct)",
+  "SGD-030": "Frontend en construcción (commit 14 oct)",
+};
+
+const sprint = Object.keys(T);
+const vistas = {
+  inicio: {
+    sub: "Captura al iniciar el sprint · 7 de octubre de 2026",
+    badge: "INICIO", cls: "",
+    cols: { "Por hacer": sprint, "En progreso": [], "En revisión": [], "Hecho": [] },
+  },
+  cierre: {
+    sub: "Captura al cerrar el sprint · 14 de octubre de 2026",
+    badge: "CIERRE", cls: "cierre",
+    cols: { "Por hacer": [], "En progreso": ["SGD-020","SGD-022","SGD-030"],
+            "En revisión": ["SGD-007","SGD-008","SGD-040","SGD-041","SGD-042","SGD-080"], "Hecho": [] },
+  },
+};
+const v = vistas[(location.hash || "#inicio").slice(1)] || vistas.inicio;
+document.getElementById("sub").textContent = v.sub;
+const b = document.getElementById("badge"); b.textContent = v.badge; if (v.cls) b.classList.add(v.cls);
+
+const board = document.getElementById("board");
+const col = (titulo, n, html) => `<div class="col"><h2>${titulo}<span>${n}</span></h2>${html}</div>`;
+board.innerHTML = col("Backlog", backlog.length, backlog.map(x => `<div class="mini"><b>${x.slice(0,7)}</b>${x.slice(7)}</div>`).join(""));
+const conNota = v === vistas.cierre;
+for (const [titulo, ids] of Object.entries(v.cols)) {
+  const html = ids.length ? ids.map(id => {
+    const c = T[id];
+    return `<div class="card ${c.p}"><div class="id">${id}<em>${c.pts ? c.pts + " pts" : ""}</em></div><div class="t">${c.t}</div>${conNota ? `<div class="n">${notas[id]}</div>` : ""}</div>`;
+  }).join("") : `<div class="empty">Sin tareas</div>`;
+  board.insertAdjacentHTML("beforeend", col(titulo, ids.length, html));
+}
+const pts = ids => ids.reduce((s, id) => s + (T[id].pts || 0), 0);
+document.getElementById("totales").textContent = conNota
+  ? `Comprometidas: ${sprint.length} · En revisión: 6 · En progreso: 3 · Hecho (verificado): 0`
+  : `Comprometidas: ${sprint.length} tareas · ${pts(sprint)} pts estimados`;
+</script>
+</body>
+</html>

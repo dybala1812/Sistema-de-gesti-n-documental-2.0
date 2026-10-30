@@ -4,6 +4,9 @@ import { errorFormulario, errorSistema } from "@/lib/errors";
 // import { requireUser } from "@/lib/auth"; // AJUSTA: la validación que usan las rutas de comunicaciones
 
 const TIPOS = ["fisica", "digital", "ambas"] as const;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Fila técnica del inventario de una transferencia digital (no es una caja física). */
+const CAJA_DIGITAL = "Digital";
 
 // Los enums se interpretan por texto, así que no importa cómo se llamen exactamente en la base
 const mapTipo = (s: string): "fisica" | "digital" | "ambas" => {
@@ -81,16 +84,57 @@ export async function POST(req: Request) {
     if (!b.dependencia || !String(b.contenido ?? "").trim() || !String(b.responsable ?? "").trim())
       return errorFormulario("Faltan datos obligatorios", 400);
     if (!TIPOS.includes(b.tipo)) return errorFormulario("Tipo de entrega no válido", 400);
-    if (!Array.isArray(b.carpetas) || b.carpetas.length === 0)
-      return errorFormulario("Falta el inventario FUID", 400);
-    if (b.carpetas.length > 5000)
+    // El Excel que entrega la dependencia se guarda tal cual como acta (no se lee fila por fila):
+    // el inventario detallado es opcional.
+    const carpetas: unknown[] = Array.isArray(b.carpetas) ? b.carpetas : [];
+    if (carpetas.length > 5000)
       return errorFormulario("El inventario es demasiado grande", 400);
+    const observaciones = String(b.observaciones ?? "").trim();
+    if (observaciones.length > 2000)
+      return errorFormulario("Las observaciones no pueden pasar de 2.000 caracteres", 400, { campo: "observaciones", tipo: "rango" });
+    // Acta de entrega: el archivo que entregó la dependencia, ya subido con POST /api/archivos.
+    const actaId = b.acta_archivo_id ? String(b.acta_archivo_id) : null;
+    if (actaId && !UUID_RE.test(actaId))
+      return errorFormulario("El acta de entrega no es válida", 400, { campo: "acta_archivo_id", tipo: "formato" });
+
+    // Física: las cajas no se suben, se quedan en bodega. Se exige dónde quedó guardada cada una
+    // (ubicación del catálogo: bodega · estante · módulo), y se guarda en su inventario.
+    const ubicacionDeCaja = new Map<string, number>();
+    if (b.tipo === "fisica") {
+      const lista: { caja?: unknown; ubicacion_id?: unknown }[] = Array.isArray(b.cajas) ? b.cajas : [];
+      if (lista.length === 0)
+        return errorFormulario("Indica cuántas cajas entregó la dependencia y dónde quedaron", 400, { campo: "cajas", tipo: "obligatorio" });
+      if (lista.length > 2000)
+        return errorFormulario("Máximo 2.000 cajas por transferencia", 400, { campo: "cajas", tipo: "rango" });
+      const sinUbicacion: string[] = [];
+      for (const c of lista) {
+        const caja = String(c?.caja ?? "").trim();
+        const ubic = Number(c?.ubicacion_id);
+        if (!caja) continue;
+        if (Number.isInteger(ubic) && ubic > 0) ubicacionDeCaja.set(caja, ubic);
+        else sinUbicacion.push(caja);
+      }
+      if (sinUbicacion.length > 0)
+        return errorFormulario(`Falta la ubicación de la caja ${sinUbicacion.slice(0, 5).join(", ")}${sinUbicacion.length > 5 ? "…" : ""}`, 400, { campo: "cajas", tipo: "obligatorio" });
+      const ids = [...new Set(ubicacionDeCaja.values())];
+      const { data: ubics, error: eUbic } = await supabase.from("ubicacion_fisica").select("id").in("id", ids).eq("estado", "activo");
+      if (eUbic) throw eUbic;
+      if ((ubics ?? []).length !== ids.length)
+        return errorFormulario("Alguna ubicación no existe o está inactiva", 400, { campo: "cajas", tipo: "existente" });
+    }
+
+    // registrar_transferencia (en Supabase) exige al menos una fila de inventario. Sin detalle:
+    // física → una fila por caja (con su ubicación); digital → una fila técnica "Digital"
+    // (los documentos quedan ligados a la transferencia y el detalle los muestra en su lugar).
+    const inventario = carpetas.length > 0 ? carpetas
+      : b.tipo === "fisica" ? [...ubicacionDeCaja.keys()].map(caja => ({ caja }))
+      : [{ caja: CAJA_DIGITAL, descripcion: "Documentos en digital: ver el acta de entrega" }];
 
     const { data, error } = await supabase.rpc("registrar_transferencia", {
       p: {
         dependencia: b.dependencia, anio: b.anio, tipo: b.tipo,
         contenido: b.contenido, responsable: b.responsable, ubicacion: b.ubicacion ?? "",
-        carpetas: b.carpetas,
+        carpetas: inventario,
         usuario_id: null, // AJUSTA: id de la tabla `usuario` del usuario autenticado (user.id)
       },
     });
@@ -102,6 +146,55 @@ export async function POST(req: Request) {
       return validacion
         ? errorFormulario(error.message, 400)
         : errorSistema("BASE_DATOS", 500, { detalle: "no se pudo registrar la transferencia" });
+    }
+
+    const creada = (Array.isArray(data) ? data[0] : data) as { id?: number } | null;
+    const avisos: string[] = [];
+    if (creada?.id && ubicacionDeCaja.size > 0) {
+      // Cada caja queda en el inventario con su ubicación: se actualiza si vino en el detalle, si no se crea.
+      const { data: existentes, error: eEx } = await supabase
+        .from("inventario_item").select("caja").eq("transferencia_id", creada.id);
+      if (eEx) throw eEx;
+      const conFilas = new Set((existentes ?? []).map(i => String(i.caja)));
+      const nuevas: { transferencia_id: number; caja: string; ubicacion_id: number; fila_origen: number }[] = [];
+      let fila = 1;
+      for (const [caja, ubic] of ubicacionDeCaja) {
+        if (conFilas.has(caja)) {
+          const { error: eU } = await supabase
+            .from("inventario_item").update({ ubicacion_id: ubic }).eq("transferencia_id", creada.id).eq("caja", caja);
+          if (eU) { console.error("POST /api/transferencias (ubicación)", eU); avisos.push(`no se guardó la ubicación de la caja ${caja}`); }
+        } else {
+          nuevas.push({ transferencia_id: creada.id, caja, ubicacion_id: ubic, fila_origen: fila });
+        }
+        fila++;
+      }
+      if (nuevas.length > 0) {
+        const { error: eN } = await supabase.from("inventario_item").insert(nuevas);
+        if (eN) { console.error("POST /api/transferencias (cajas)", eN); avisos.push("no se guardaron las cajas con su ubicación"); }
+      }
+    }
+    if (creada?.id) {
+      // Física: unidades = cajas. Digital: unidades = documentos que se van a subir.
+      const unidades = b.tipo === "fisica" ? ubicacionDeCaja.size : Number(b.total_documentos) || null;
+      const cambios: Record<string, unknown> = {};
+      if (unidades) cambios.unidades = unidades;
+      if (observaciones) cambios.descripcion = observaciones;
+      if (Object.keys(cambios).length > 0) {
+        const { error: eT } = await supabase.from("transferencia").update(cambios).eq("id", creada.id);
+        if (eT) { console.error("POST /api/transferencias (datos)", eT); avisos.push("no se guardaron las observaciones o la cantidad"); }
+      }
+    }
+    if (actaId && creada?.id) {
+      const { error: eActa } = await supabase
+        .from("transferencia").update({ acta_archivo_id: actaId }).eq("id", creada.id);
+      if (eActa) {
+        console.error("POST /api/transferencias (acta)", eActa);
+        avisos.push("no se pudo asociar el acta de entrega");
+      }
+    }
+    if (avisos.length > 0) {
+      // La transferencia ya quedó registrada: se avisa, sin deshacerla.
+      return NextResponse.json({ ...creada, aviso: `La transferencia quedó registrada, pero ${avisos.join("; ")}` }, { status: 201 });
     }
     return NextResponse.json(data, { status: 201 });
   } catch (e) {
