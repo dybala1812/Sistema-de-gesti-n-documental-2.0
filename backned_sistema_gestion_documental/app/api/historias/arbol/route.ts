@@ -1,7 +1,7 @@
 /**
  * GET /api/historias/arbol
  * Árbol de historias académicas Estado → Año → Nivel → Programa con cuántas hay en cada nodo (RF-AC-020).
- * Requiere historias.consultar; Registro Académico solo ve las activas (RN-AC-06). Función SQL: fn_historias_arbol (migración 28).
+ * Requiere historias.consultar (Registro Académico ve todas, D-27; migración 29). Función SQL: fn_historias_arbol (migración 28).
  */
 import { NextRequest } from "next/server";
 import { obtenerUsuarioAutenticado } from "../../../../lib/auth";

@@ -10,6 +10,17 @@ Seguridad: secretos, validaciones, permisos revisados
 Commit: hash o "ninguno"
 -->
 
+## 2026-11-03 — decisión | Registro Académico ve todas las historias (D-26, D-27)
+Cambio: D-26 (Registro Académico carga historias de cualquier estado; ya funcionaba así) y D-27 (también las consulta todas). Migración 29: fn_puede_ver_historia deja ver todas a Archivo Central, Registro Académico y Secretaría General; afecta árbol, lista, ficha, Consulta › Buscar y descarga de los archivos de historias. La custodia (historia_academica.custodia, RN-AC-06) no cambia.
+Tests: tsc sin errores; la migración 29 no se probó (falta aplicarla en Supabase).
+Commit: rama feature/historias-niveles-transferencias.
+
+## 2026-11-03 — feature | App móvil: historias académicas individuales y masivas
+Cambio: la app del celular (/movil, AppMovil.tsx) pasa de subir documentos a subir historias académicas, con dos modos y el mismo destino (Estado → Año → Nivel → Programa del catálogo + título del documento): Individual (fotos de las páginas que se unen en un PDF + apellidos, nombres y cédula) y Masiva (varios archivos "APELLIDOS NOMBRES - cédula.pdf", uno a uno con su resultado y Reintentar para los que fallan). Usa POST /api/historias. lib/historiasApi.ts reúne lo que comparten la web y el celular (estados, convención del nombre del archivo, niveles del catálogo con respaldo al nivel viejo); NuevaCargaHistorias.tsx los usa. En historias activas el año es opcional.
+Tests: tsc sin errores en archivos propios; Vite compila AppMovil y NuevaCargaHistorias. API en Supabase real (migración 27 ya aplicada): individual activa sin año → 201; Registro Académico carga una graduada → 201. Datos de prueba: estudiantes "PRUEBA MOVIL INDIVIDUAL" (99000222) y "PRUEBA MOVIL RA" (99000333). No se probó en la pantalla del celular (falta entrar con el login temporal).
+Decisión D-26: Registro Académico sí carga historias de cualquier estado (también antiguas de graduados y retirados); la consulta sigue la custodia del F-02 (RN-AC-06).
+Commit: rama feature/historias-niveles-transferencias.
+
 ## 2026-10-30 — feature | Carro, estante y bandeja se escriben en cada carga (D-25) · arreglo migración 27
 Cambio: en la transferencia física, cada caja lleva su Carro, Estante y Bandeja escritos en la carga (con "Poner en todas las cajas" y cambio por caja), ya no se eligen de un catálogo; el backend (POST /api/transferencias) los exige por caja y los guarda en inventario_item; el detalle los muestra (cajas viejas sin esos datos usan la ubicación del catálogo). Catálogos › Ubicaciones físicas queda oculta. Los documentos ya tenían los cinco campos de texto. Migración 27: la línea que pasa las especializaciones a Posgrado estaba antes de crear la columna nivel_id (ERROR 42703 al correrla en Supabase); se movió después. Como el error deshizo todo, se puede volver a correr.
 Tests: tsc sin errores en archivos propios; Vite compila los 4 módulos tocados; API en Supabase real: sin estante → 400 «Falta el carro, estante o bandeja de la caja 1»; transferencia física ficticia TR-2026-021 con 2 cajas → 201 y el detalle devuelve carro/estante/bandeja de cada una.
