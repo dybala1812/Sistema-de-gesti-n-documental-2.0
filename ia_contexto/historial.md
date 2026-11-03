@@ -10,6 +10,11 @@ Seguridad: secretos, validaciones, permisos revisados
 Commit: hash o "ninguno"
 -->
 
+## 2026-11-03 — decisión | Registro Académico ve todas las historias (D-26, D-27)
+Cambio: D-26 (Registro Académico carga historias de cualquier estado; ya funcionaba así) y D-27 (también las consulta todas). Migración 29: fn_puede_ver_historia deja ver todas a Archivo Central, Registro Académico y Secretaría General; afecta árbol, lista, ficha, Consulta › Buscar y descarga de los archivos de historias. La custodia (historia_academica.custodia, RN-AC-06) no cambia.
+Tests: tsc sin errores; la migración 29 no se probó (falta aplicarla en Supabase).
+Commit: rama feature/historias-niveles-transferencias.
+
 ## 2026-11-03 — feature | App móvil: historias académicas individuales y masivas
 Cambio: la app del celular (/movil, AppMovil.tsx) pasa de subir documentos a subir historias académicas, con dos modos y el mismo destino (Estado → Año → Nivel → Programa del catálogo + título del documento): Individual (fotos de las páginas que se unen en un PDF + apellidos, nombres y cédula) y Masiva (varios archivos "APELLIDOS NOMBRES - cédula.pdf", uno a uno con su resultado y Reintentar para los que fallan). Usa POST /api/historias. lib/historiasApi.ts reúne lo que comparten la web y el celular (estados, convención del nombre del archivo, niveles del catálogo con respaldo al nivel viejo); NuevaCargaHistorias.tsx los usa. En historias activas el año es opcional.
 Tests: tsc sin errores en archivos propios; Vite compila AppMovil y NuevaCargaHistorias. API en Supabase real (migración 27 ya aplicada): individual activa sin año → 201; Registro Académico carga una graduada → 201. Datos de prueba: estudiantes "PRUEBA MOVIL INDIVIDUAL" (99000222) y "PRUEBA MOVIL RA" (99000333). No se probó en la pantalla del celular (falta entrar con el login temporal).

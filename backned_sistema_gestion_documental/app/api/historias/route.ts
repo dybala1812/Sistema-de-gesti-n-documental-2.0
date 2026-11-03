@@ -1,7 +1,7 @@
 /**
  * GET  /api/historias?estado=&anio=&nivel_id=&programa_id=&q=&pagina=
  *      Historias académicas de un nodo del árbol o de una búsqueda (nombre, cédula o título de un
- *      documento), 20 por página (RF-AC-020). historias.consultar; RA solo activas. fn_historias_listar (migración 28).
+ *      documento), 20 por página (RF-AC-020). historias.consultar (RA ve todas, D-27). fn_historias_listar (migración 28).
  * POST /api/historias  (multipart: archivo, programa_id, estado (graduado|retirado|activa), anio,
  *                       titulo, apellidos, nombres, numero_documento, tipo_documento? = CC)
  * Guarda UN documento en la historia académica de un estudiante (carga D, RF-AC-021).
