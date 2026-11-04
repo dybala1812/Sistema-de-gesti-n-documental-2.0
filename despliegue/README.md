@@ -93,7 +93,10 @@ Después, ese Administrador asigna el perfil de cada persona en Administración 
 
 - Variable de build: `VITE_SGD_API_URL=https://sgd-api.<dominio>/api`.
 - No lleva `VITE_LOGIN_TEMPORAL` ni ningún token: el login temporal de pruebas se quitó (SGD-091).
-- Se construye y publica con el proceso normal de NOVA.
+- Se construye y publica con el proceso normal de NOVA, con **dos ajustes en archivos de NOVA** que debe hacer su equipo:
+  1. `NOVA_FT/Dockerfile` no recibe `VITE_SGD_API_URL`: agregar `ARG VITE_SGD_API_URL` y sumarla al `ENV` del build. Sin eso el módulo busca el backend en `http://localhost:3000/api` y no carga.
+  2. `NOVA_FT/nginx.conf`: la política `frame-src` no permite `blob:`, y el visor del módulo muestra los PDF en un iframe con esa dirección. Agregar `blob:` a `frame-src`; si no, los PDF no se ven.
+- `connect-src` de esa misma política ya permite llamar a cualquier dominio HTTPS: no hace falta cambiarlo para el backend.
 
 ## Actualizar
 
