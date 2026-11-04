@@ -5,14 +5,6 @@
 
 ## Antes del despliegue
 
-- [ ] SGD-091: Quitar el login temporal de pruebas por perfil (/login-temporal) y dejar solo el token de NOVA
-  Tipo: chore
-  Prioridad: alta (bloquea el despliegue)
-  Etiquetas: seguridad, despliegue
-  Skills: seguridad, desarrollo
-  Requisito: regla 10 de CLAUDE.md (sin login propio), D-13
-  Pasos: seguir la lista de ia_contexto/login-temporal.md (todo está marcado con ⚠️ TEMPORAL), quitar las variables de los .env y comprobar que el build de producción no contiene login-temporal ni sgdtmp.
-  Nota: rotar N8N_SERVICE_TOKEN (también en la credencial de n8n): estuvo en un build local del frontend antes del 2026-10-28.
 
 ## Bugs reportados (2026-10-27)
 

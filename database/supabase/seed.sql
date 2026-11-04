@@ -63,6 +63,7 @@ insert into permiso_perfil (perfil, funcion) values
   ('archivo_central', 'historias.consultar'),
   ('archivo_central', 'historias.gestionar'),
   ('archivo_central', 'registros.anular'),
+  ('archivo_central', 'auditoria.consultar'),   -- D-28
   -- Dependencia: transferir y consultar lo suyo (el filtro por dependencia lo hace fn_puede_ver_dependencia).
   ('dependencia', 'cargas.transferencia'),
   ('dependencia', 'documentos.consultar'),

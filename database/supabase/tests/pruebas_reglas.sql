@@ -612,7 +612,12 @@ begin
 
   -- Auditoría: solo quien tiene auditoria.consultar
   r := fn_auditoria_consultar(v_ac);
-  perform pg_temp.ok((r->>'denegado')::boolean, 'auditoría: Archivo Central no la consulta');
+  perform pg_temp.ok(not coalesce((r->>'denegado')::boolean, false) and (r->>'total')::int >= 1,
+                     'D-28: Archivo Central consulta la auditoría');
+  r := fn_auditoria_consultar(v_dep);
+  perform pg_temp.ok((r->>'denegado')::boolean and exists (select 1 from auditoria where usuario_id = v_dep
+                     and recurso_tipo = 'auditoria' and resultado = 'denegado'),
+                     'auditoría: Dependencia no la consulta y el intento queda auditado');
   r := fn_auditoria_consultar(v_adm, p_recurso_tipo => 'tipo_documental', p_recurso_id => v_id::text);
   perform pg_temp.ok((r->>'total')::int >= 4 and jsonb_array_length(r->'datos') >= 4 and (r->'datos'->0->>'usuario') is not null,
                      'auditoría: el Administrador filtra por recurso y ve quién actuó');
@@ -773,8 +778,12 @@ begin
   perform pg_temp.ok(jsonb_array_length(r->'filas') = 1 and (r->>'total')::int >= 2, 'RF-AC-014: resultados paginados');
   r := fn_archivo_buscar(v_ac, '{"persona":"%"}');
   perform pg_temp.ok((r->>'total')::int = 0, 'SGD-032: los comodines del usuario se buscan como texto');
+  r := fn_archivo_buscar(v_ura, '{"texto":"acta","alcance":"documentos"}');
+  perform pg_temp.ok((r->>'denegado')::boolean, 'SGD-032: sin documentos.consultar la búsqueda de documentos se niega');
   r := fn_archivo_buscar(v_ura, '{"texto":"acta"}');
-  perform pg_temp.ok((r->>'denegado')::boolean, 'SGD-032: sin permisos de consulta la búsqueda se niega');
+  perform pg_temp.ok(not coalesce((r->>'denegado')::boolean, false) and (r->'incluye'->>'documentos')::boolean is not true
+                     and (r->'incluye'->>'comunicaciones')::boolean is not true,
+    'D-27: Registro Académico busca, pero sin documentos ni comunicaciones');
   perform fn_set_usuario_actual(v_ac);   -- las funciones fijan el usuario que actúa: se restaura el de la sesión
   perform pg_temp.debe_fallar($q$ select fn_archivo_buscar(fn_usuario_actual(), '{"tipo":"fax"}') $q$, 'Tipo no válido');
 end $$;
@@ -790,6 +799,50 @@ begin
   perform pg_temp.debe_fallar($q$ update auditoria set accion = 'x' $q$, 'RF-AC-023');
   perform pg_temp.debe_fallar($q$ delete from auditoria $q$, 'RF-AC-023');
   perform pg_temp.debe_fallar($q$ truncate auditoria $q$, 'RF-AC-023');
+end $$;
+
+-- ── Transferencias: registrar_transferencia de la migración 31 (D-29) ──────────
+do $$
+declare
+  r jsonb;
+  r2 jsonb;
+  v_dep text := (select nombre from dependencia where codigo = '110');
+  v_anio int := extract(year from current_date)::int - 2;
+  v_fila jsonb;
+  v_base jsonb;
+begin
+  v_fila := jsonb_build_object('caja', '1', 'carpeta', '1-3', 'asunto', 'Actas', 'fechaInicial', v_anio || '-01-10',
+                               'fechaFinal', v_anio || '-03-28', 'folios', 96, 'docs', 0, 'descripcion', 'Actas del trimestre');
+  v_base := jsonb_build_object('dependencia', v_dep, 'anio', v_anio, 'tipo', 'fisica', 'contenido', 'Actas',
+                               'responsable', 'Funcionario Ficticio', 'ubicacion', '', 'carpetas', jsonb_build_array(v_fila));
+  r := registrar_transferencia(v_base);
+  perform pg_temp.ok(r->>'codigo' ~ ('^TR-' || extract(year from current_date)::int || '-\d{3}$')
+                     and exists (select 1 from inventario_item where transferencia_id = (r->>'id')::bigint and caja = '1' and folios = 96),
+    'D-29: registrar_transferencia crea la transferencia con su código y su inventario');
+  r2 := registrar_transferencia(v_base);
+  perform pg_temp.ok(r2->>'codigo' > r->>'codigo', 'D-29: el código de la siguiente transferencia es el siguiente número');
+  perform pg_temp.debe_fallar(format($q$ select registrar_transferencia(%L) $q$, v_base || '{"dependencia":"No existe"}'), 'La dependencia no es válida');
+  perform pg_temp.debe_fallar(format($q$ select registrar_transferencia(%L) $q$, v_base || jsonb_build_object('anio', v_anio + 2)), 'RN-AC-03');
+  perform pg_temp.debe_fallar(format($q$ select registrar_transferencia(%L) $q$, v_base || '{"carpetas":[]}'), 'inventario está vacío');
+  perform pg_temp.debe_fallar(format($q$ select registrar_transferencia(%L) $q$,
+    v_base || jsonb_build_object('carpetas', jsonb_build_array(v_fila || jsonb_build_object('fechaFinal', v_anio || '-01-01')))), 'anterior a la inicial');
+end $$;
+
+-- ── fn_autorizar: permiso y auditoría del intento denegado (migración 32) ──────
+do $$
+declare
+  v_ac bigint := fn_usuario_actual();
+  v_ra bigint := (select id from usuario where perfil = 'registro_academico' order by id limit 1);
+  v_puede boolean;
+begin
+  perform pg_temp.ok(fn_autorizar(v_ac, 'cargas.transferencia', 'crear', 'transferencia'),
+    'fn_autorizar: Archivo Central puede registrar transferencias');
+  v_puede := fn_autorizar(v_ra, 'cargas.transferencia', 'crear', 'transferencia');   -- aparte: el exists debe ver lo que escribió
+  perform pg_temp.ok(not v_puede
+                     and exists (select 1 from auditoria where usuario_id = v_ra and accion = 'crear'
+                                 and recurso_tipo = 'transferencia' and resultado = 'denegado'),
+    'fn_autorizar: Registro Académico no registra transferencias y el intento queda auditado con su usuario');
+  perform fn_set_usuario_actual(v_ac);   -- restaura el usuario de la sesión de pruebas
 end $$;
 
 -- ── IA ───────────────────────────────────────────────────────────────────────

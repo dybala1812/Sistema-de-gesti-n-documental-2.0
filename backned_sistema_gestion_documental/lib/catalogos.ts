@@ -328,6 +328,21 @@ export async function tienePermiso(usuarioId: number, funcion: string): Promise<
   return data === true;
 }
 
+/**
+ * Revisa el permiso y, si no lo tiene, audita el intento denegado con el usuario y la acción
+ * (fn_autorizar, migración 32). Sin esa migración revisa el permiso igual, pero sin auditar.
+ */
+export async function autorizar(
+  usuarioId: number, funcion: string, accion: string, recursoTipo: string, recursoId?: string,
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("fn_autorizar", {
+    p_usuario_id: usuarioId, p_funcion: funcion, p_accion: accion, p_recurso_tipo: recursoTipo, p_recurso_id: recursoId ?? null,
+  });
+  if (error?.code === "PGRST202") return tienePermiso(usuarioId, funcion);
+  if (error) throw errorDeBase(error, "20261101000000_autorizar_accion.sql");
+  return data === true;
+}
+
 // ── Lectura ──────────────────────────────────────────────────────────────────
 
 export interface ListarOpciones {

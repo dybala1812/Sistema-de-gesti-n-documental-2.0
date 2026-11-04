@@ -307,7 +307,7 @@ Reglas: RN-AC-07, RN-AC-11
 - Dado cualquier acción, se valida el permiso sobre la función **y** el recurso (backend, no solo UI).
 - Dado una acción relevante, se registra usuario, acción, recurso, fecha y valores previos y nuevos.
 - Dado un intento sin permiso, entonces se deniega y se audita.
-- La auditoría no se puede editar ni borrar. El ADM la consulta con filtros.
+- La auditoría no se puede editar ni borrar. El ADM y AC la consultan con filtros (D-28).
 
 Reglas: RN-AC-12
 

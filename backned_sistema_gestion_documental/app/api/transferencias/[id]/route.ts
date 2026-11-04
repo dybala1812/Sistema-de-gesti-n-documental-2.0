@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase"; // AJUSTA: nombre/ruta real de tu cliente de Supabase
-import { errorFormulario, errorSistema } from "@/lib/errors";
-// import { requireUser } from "@/lib/auth"; // AJUSTA
+import { errorFormulario, errorSistema, forbidden } from "@/lib/errors";
+import { obtenerUsuarioAutenticado } from "@/lib/auth";
+import { autorizar } from "@/lib/catalogos";
 
 // Next 15: params es una promesa. Si tienes Next 14, usa ctx: { params: { id: string } } y quita el await.
 type Ctx = { params: Promise<{ id: string }> };
@@ -23,11 +24,14 @@ const nombre = (u: unknown) => {
 };
 
 /** GET /api/transferencias/[id] → detalle con inventario (alimenta la pantalla de detalle) */
-export async function GET(_req: Request, ctx: Ctx) {
+export async function GET(req: Request, ctx: Ctx) {
   try {
-    // const user = await requireUser(_req);
+    const usuario = await obtenerUsuarioAutenticado(req);
     const id = Number((await ctx.params).id);
     if (!Number.isInteger(id) || id <= 0) return errorFormulario("Id no válido", 400);
+    if (!(await autorizar(usuario.id, "cargas.transferencia", "consultar", "transferencia", String(id)))) {
+      return forbidden("No tiene permiso para esta acción: requiere el permiso cargas.transferencia");
+    }
 
     const { data: t, error } = await supabase
       .from("transferencia")
@@ -35,13 +39,15 @@ export async function GET(_req: Request, ctx: Ctx) {
         id, codigo, anio, tipo, estado, funcionario_entrega, descripcion, contenido, ubicacion_texto, unidades,
         registrado_en, recibido_en,
         acta:acta_archivo_id(id, nombre_original, mime, tamano_bytes),
-        dependencia:dependencia_id(nombre),
+        dependencia_id, dependencia:dependencia_id(nombre),
         recibidor:usuario!transferencia_recibido_por_fkey(nombre, apellido),
         registrador:usuario!transferencia_registrado_por_fkey(nombre, apellido)
       `)
       .eq("id", id).maybeSingle();
     if (error) throw error;
-    if (!t) return errorFormulario("No existe la transferencia", 404);
+    // Dependencia solo ve las suyas; las de otra dependencia se responden como inexistentes.
+    if (!t || (usuario.perfil === "dependencia" && t.dependencia_id !== (usuario.dependencia_id ?? -1)))
+      return errorFormulario("No existe la transferencia", 404);
 
     const { data: items, error: e2 } = await supabase
       .from("inventario_item").select("*, ubicacion:ubicacion_id(id, carro, estante, bandeja, bodega, modulo)").eq("transferencia_id", id)
@@ -102,6 +108,7 @@ export async function GET(_req: Request, ctx: Ctx) {
       aviso_archivos: avisoArchivos,
     });
   } catch (e) {
+    if (e instanceof Response) return e; // sin sesión o token no válido
     console.error("GET /api/transferencias/[id]", e);
     return errorSistema("INTERNO", 500, { detalle: "no se pudo cargar la transferencia" });
   }

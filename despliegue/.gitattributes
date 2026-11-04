@@ -1,0 +1,2 @@
+# Se usan dentro de contenedores Linux: siempre con saltos de línea LF, también si se clona en Windows.
+* text eol=lf

@@ -140,6 +140,10 @@ Sin número de error y sin consecutivo: un fallo de validación **no consume** c
 
 Un número nuevo se agrega al catálogo (sin reutilizar números) y a la prueba que verifica que no se repiten.
 
+## Despliegue en producción (D-29)
+
+Base de datos local, sin Supabase: `despliegue/docker-compose.yml` levanta PostgreSQL 18, PostgREST (detrás de un Nginx que expone `/rest/v1/`, como Supabase) y el backend (`backned_sistema_gestion_documental/Dockerfile`, Next.js standalone). Solo el backend se publica. Las migraciones las aplica `database/scripts/instalar_local.sh` (tabla `sgd_migracion`). Lo que se entrega a producción va en la rama `despliegue-backend` (sin `NOVA_FT/` ni `ia_contexto/`), que arma `scripts/armar_rama_despliegue.sh`. Guía: `despliegue/README.md`.
+
 ## Seguridad de datos (propuesta)
 
 - Activar **RLS** en todas las tablas de Supabase; n8n usa una credencial de servicio guardada solo en n8n.

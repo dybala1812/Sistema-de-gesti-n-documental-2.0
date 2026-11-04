@@ -10,6 +10,26 @@ Seguridad: secretos, validaciones, permisos revisados
 Commit: hash o "ninguno"
 -->
 
+## 2026-11-04 — SGD-095 en revisión | Transferencias exigen sesión y permiso
+Cambio: GET/POST /api/transferencias y GET /api/transferencias/{id} (código de dybala1812, corregido a pedido del usuario) exigen sesión y cargas.transferencia; Dependencia limitada a su dependencia; registrar_transferencia recibe el usuario. Nueva fn_autorizar (migración 32) y helper autorizar() en lib/catalogos.ts para auditar intentos denegados con usuario y acción.
+Tests: probar_local.sh 165 OK; en vivo sin token 401, con permiso 200 y POST vacío 400; tsc backend 0; lint 0 errores.
+Pendiente: aplicar la migración 32 en Supabase.
+Commit: ver la rama feature/SGD-094-preparar-despliegue.
+
+## 2026-11-04 — SGD-091, SGD-093 y SGD-094 en revisión | Preparar el despliegue con base de datos local
+Cambio: producción pidió base de datos local (D-29): PostgreSQL 18 + PostgREST + Nginx + backend en despliegue/docker-compose.yml, sin cambiar el código del backend (el cliente de Supabase solo usa from y rpc). Instalador database/scripts/instalar_local.sh con control de migraciones; migración 31 con lo que faltaba de Supabase (I-20). Backend con Dockerfile standalone, /api/salud y SUPABASE_URL (NEXT_PUBLIC_* queda fija en el build). Login temporal retirado del backend y del frontend (SGD-091). Archivo Central solo para el rol área de NOVA (D-30). Rama de entrega sin NOVA: scripts/armar_rama_despliegue.sh → despliegue-backend. Guía: despliegue/README.md.
+Tests: instalador en PostgreSQL 18 temporal (34 migraciones; segunda corrida 0; permisos de service_role y anon); probar_local.sh: 163 OK y concurrencia, con dos problemas ajenos tapados solo en una copia temporal; npm test 21/21; tsc backend 0; lint 0 errores; tsc frontend 28 (línea base); vite build sin login-temporal ni tokens; build standalone con node server.js.
+Reporte (no es nuestro): GET/POST /api/transferencias y GET /api/transferencias/{id} sin autenticación; nivel_formacion sin RLS (migración 27); prueba de historias desactualizada desde D-27.
+Pendiente: docker compose en un servidor de pruebas; exportar registrar_transferencia original; revisión humana.
+Commit: ver la rama feature/SGD-094-preparar-despliegue.
+
+## 2026-11-04 — decisión | D-28 auditoría para Archivo Central; Comunicaciones oculta; acceso desde el celular
+Cambio: migración 30 da auditoria.consultar a Archivo Central (seed, prueba y verificar_supabase actualizados). En el menú de Archivo Central se ocultan Bandeja y Correos sin asociar (flag oculto; permisos, rutas y flujos n8n siguen igual). Para el celular: Vite con --host en .claude/launch.json; el backend ya aceptaba la red local en desarrollo.
+Tests: con la prueba ajena de historias ajustada solo en una copia temporal, las 3 pruebas de auditoría pasan; tsc frontend 28 (línea base); en el navegador por 192.168.1.2 en vista de celular, el menú sale sin Comunicaciones y con Auditoría.
+Reporte (no es nuestro): pruebas_reglas.sql falla en "RF-AC-020: Registro Académico no ve historias de graduados/retirados" tras la migración 29 (D-27), y la búsqueda de la migración 28 usa transferencia.contenido, que no está en ninguna migración.
+Pendiente: aplicar la migración 30 en Supabase (hoy Archivo Central recibe 403 en Auditoría).
+Commit: ninguno (pendiente de revisión).
+
 ## 2026-11-03 — decisión | Registro Académico ve todas las historias (D-26, D-27)
 Cambio: D-26 (Registro Académico carga historias de cualquier estado; ya funcionaba así) y D-27 (también las consulta todas). Migración 29: fn_puede_ver_historia deja ver todas a Archivo Central, Registro Académico y Secretaría General; afecta árbol, lista, ficha, Consulta › Buscar y descarga de los archivos de historias. La custodia (historia_academica.custodia, RN-AC-06) no cambia.
 Tests: tsc sin errores; la migración 29 no se probó (falta aplicarla en Supabase).
