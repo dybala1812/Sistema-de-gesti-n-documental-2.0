@@ -1,0 +1,13 @@
+# Nada de secretos, dependencias locales, builds ni archivos reales en la imagen.
+node_modules
+.next
+.git
+.env*
+!.env.example
+archivos_sgd
+*.log
+coverage
+tests
+tsconfig.tsbuildinfo
+Dockerfile
+.dockerignore
