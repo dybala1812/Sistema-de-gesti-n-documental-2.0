@@ -23,10 +23,10 @@ Web responsive (React) + PWA móvil para escaneo con la cámara.
 ## Stack actual
 
 - Frontend existente: `NOVA_FT/` (portal NOVA) — React + TypeScript + Vite 6 + Tailwind v4 + Radix/shadcn + React Router 7 + react-pdf + exceljs.
-- Base de datos: PostgreSQL en **Supabase**.
+- Base de datos: **PostgreSQL 18 propio** (Docker en el servidor; sin Supabase, D-31). El backend se conecta directo con el driver `pg`.
 - Archivos: guardados localmente en carpetas; en BD un id por archivo que lo referencia (tabla `archivo`).
-- Automatización: **n8n** (flujos F1–F11) con escritura directa en Supabase.
-- Backend de la aplicación: **por definir** (P-11). Carpeta reservada: `backned_sistema_gestion_documental/` (vacía).
+- Automatización: **n8n** (flujos F1–F11) que hablan solo con el backend (D-19).
+- Backend de la aplicación: Next.js 16 (solo `app/api`) en `backned_sistema_gestion_documental/`.
 
 ## Ubicación
 

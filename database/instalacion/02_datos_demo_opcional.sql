@@ -1,4 +1,4 @@
--- SGD · Datos de DEMOSTRACIÓN (ficticios). Opcional: solo para un proyecto de pruebas.
+-- SGD · Datos de DEMOSTRACIÓN (ficticios). Opcional: solo para una base de pruebas.
 -- Ejecutar DESPUÉS de 01_estructura_y_datos_base.sql. Nunca en producción.
 
 -- =============================================================================

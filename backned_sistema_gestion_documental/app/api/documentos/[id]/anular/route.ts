@@ -5,7 +5,7 @@
  * Función SQL: fn_anular_documento_usuario (migración 16). Solo Archivo Central o Administrador.
  */
 import { NextRequest } from "next/server";
-import { supabase } from "../../../../../lib/supabase";
+import { db } from "../../../../../lib/db";
 import { obtenerUsuarioAutenticado, requerirPerfil } from "../../../../../lib/auth";
 import { SolicitudInvalida, idRuta, leer, parseBody } from "../../../../../lib/n8n";
 import { errorResponse, errorSistema, handleError, jsonResponse } from "../../../../../lib/errors";
@@ -24,16 +24,16 @@ export async function POST(
     const b = await parseBody(request);
     const motivo = leer.texto(b, "motivo", true) as string;
 
-    const { data, error } = await supabase.rpc("fn_anular_documento_usuario", {
+    const { data, error } = await db.rpc("fn_anular_documento_usuario", {
       p_usuario_id: usuario.id,
       p_documento_id: documentoId,
       p_motivo: motivo,
     });
 
     if (error) {
-      if (error.code === "PGRST202") {
+      if (error.code === "42883") {
         return errorSistema("MIGRACION", 500, {
-          detalle: "ejecute en el SQL Editor de Supabase database/supabase/migrations/20261016000000_anular_documento.sql",
+          detalle: "aplique database/migrations/20261016000000_anular_documento.sql con database/scripts/instalar_local.sh",
         });
       }
       const etiqueta = ETIQUETA.exec(error.message);

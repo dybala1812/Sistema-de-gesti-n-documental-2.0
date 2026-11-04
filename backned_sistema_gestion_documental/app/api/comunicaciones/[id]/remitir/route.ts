@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { supabase } from "../../../../../lib/supabase";
+import { db } from "../../../../../lib/db";
 import { obtenerUsuarioAutenticado, puedeGestionarComunicaciones } from "../../../../../lib/auth";
 import { obtenerComunicacion } from "../../../../../lib/comunicaciones";
 import { SolicitudInvalida, leer, parseBody, idRuta } from "../../../../../lib/n8n";
@@ -24,13 +24,13 @@ async function remitirComunicacion(
   mensaje: string,
   messageIdEnviado: string | null,
 ): Promise<void> {
-  const { data: plazoParam } = await supabase.rpc("fn_parametro_entero", {
+  const { data: plazoParam } = await db.rpc("fn_parametro_entero", {
     p_clave: "plazo_respuesta_dias_habiles",
   });
   const plazo = plazoDiasHabiles ?? (plazoParam ? Number(plazoParam) : null) ?? 5;
   const fechaLimite = sumarDiasHabiles(new Date(), plazo).toISOString().split("T")[0];
 
-  const { error: updateError } = await supabase
+  const { error: updateError } = await db
     .from("comunicacion")
     .update({
       dependencia_id: dependenciaId,
@@ -44,7 +44,7 @@ async function remitirComunicacion(
     throw Object.assign(new Error(updateError.message), { status: 422, code: updateError.code });
   }
 
-  const { data: eventoRemision } = await supabase
+  const { data: eventoRemision } = await db
     .from("comunicacion_evento")
     .select("id")
     .eq("comunicacion_id", comunicacionId)
@@ -56,7 +56,7 @@ async function remitirComunicacion(
   if (eventoRemision) {
     const detalle: Record<string, unknown> = { plazo_dias_habiles: plazo };
     if (mensaje) detalle.mensaje = mensaje;
-    await supabase
+    await db
       .from("comunicacion_evento")
       .update({
         message_id: messageIdEnviado,
@@ -90,7 +90,7 @@ export async function POST(
     }
 
     // TODO: migrar a fn_remitir_comunicacion_usuario cuando se aplique
-    // database/supabase/migrations/20261007000700_backend_helpers.sql.
+    // database/migrations/20261007000700_backend_helpers.sql.
     await remitirComunicacion(comunicacionId, dependenciaId, plazoDiasHabiles, mensaje, messageIdEnviado);
 
     const actualizada = await obtenerComunicacion(comunicacionId);

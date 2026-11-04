@@ -9,7 +9,7 @@ Universidad Autónoma (Uniautónoma del Cauca) · práctica profesional. Reempla
 - **Mockups (cómo se ve la app):** `ia_contexto/diseno/mockups_archivo_central_y_movil.html` (abrir en navegador; escritorio + móvil). Descripción por pantalla y diferencias con el F-02: `ia_contexto/diseno/README.md`. Al construir una pantalla, seguir su mockup salvo donde contradiga el F-02.
 - **Tablero:** `ia_contexto/tareas-*.md` + `historial.md` (skill `project-manager`). Prefijo de tareas `SGD-NNN`.
 - **Cómo programar:** `.claude/skills/` (espejo `.agents/skills/`; mantener ambas sincronizadas): `desarrollo`, `seguridad`, `testing`, `git`, `frontend/`.
-- Frontend: `NOVA_FT/` (React + TS + Vite + Tailwind v4 + shadcn; repo Git anidado). Backend: `backned_sistema_gestion_documental/` — **base de datos lista** en `supabase/` (migraciones, seeds, pruebas: `scripts/probar_local.sh`); servidor de aplicación por decidir (P-11). BD: Supabase PostgreSQL. Automatización: n8n (F1–F11).
+- Frontend: `NOVA_FT/` (React + TS + Vite + Tailwind v4 + shadcn; repo Git anidado). Backend: `backned_sistema_gestion_documental/` (Next.js, solo `app/api`; habla con PostgreSQL directo vía `lib/db.ts`). BD: **PostgreSQL 18 propio, sin Supabase** (D-31) en `database/` (migraciones, seeds, pruebas: `database/scripts/probar_local.sh`). Despliegue: `README_DEPLOY.md`. Automatización: n8n (F1–F11).
 
 ## Regla de trabajo: no tocar lo ajeno
 

@@ -11,8 +11,8 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 | Parte | Carpeta | Tecnología |
 |---|---|---|
 | Frontend | `NOVA_FT/` (repo Git aparte, rama `desarrollo-archivo-central`) | React 18.3 + TypeScript + Vite 6 + Tailwind v4 + shadcn/ui (Radix) + React Router 7; alertas con Sileo; Excel con `xlsx` |
-| Backend | `backned_sistema_gestion_documental/` | Next.js 16 (solo rutas `app/api`) + TypeScript 5 + `@supabase/supabase-js` con service role (solo en el servidor); ESLint 9 (`eslint-config-next`) |
-| Base de datos | `database/supabase/` | Supabase PostgreSQL: migraciones SQL, funciones `fn_*` y `n8n_*`, RLS y triggers de auditoría |
+| Backend | `backned_sistema_gestion_documental/` | Next.js 16 (solo rutas `app/api`) + TypeScript 5 + `pg` (PostgreSQL directo, `lib/db.ts`, rol `sgd_backend`; solo en el servidor); ESLint 9 (`eslint-config-next`) |
+| Base de datos | `database/` | PostgreSQL 18: migraciones SQL, funciones `fn_*` y `n8n_*`, RLS y triggers de auditoría |
 | Automatización | n8n (F1–F6) | Solo la Bandeja de comunicaciones; habla únicamente con el backend (`POST /api/n8n/*`) |
 
 ## Scripts
@@ -52,9 +52,9 @@ Sistema de Gestion Documental/
 │   ├── tests/                          # pruebas unitarias (node --test)
 │   └── archivos_sgd/                   # archivos subidos, locales e ignorados por Git
 ├── database/
-│   ├── supabase/migrations/            # migraciones SQL, en orden por fecha
-│   ├── supabase/tests/pruebas_reglas.sql
-│   └── scripts/                        # probar_local.sh, verificar_supabase.mjs
+│   ├── migrations/                     # migraciones SQL, en orden por fecha
+│   ├── tests/pruebas_reglas.sql
+│   └── scripts/                        # instalar_local.sh, probar_local.sh, armar_instalacion.sh
 ├── flujos n8n/                         # flujos exportados en JSON
 └── ia_contexto/                        # spec, tablero, historial
 ```
@@ -101,7 +101,7 @@ Antes de implementar, leer el RF en `ia_contexto/spec/requirements.md`, las regl
 - No hacer `DELETE` físico: inactivar o anular con motivo.
 - No devolver al cliente rutas de archivos ni detalles internos de PostgreSQL.
 - No escribir datos personales en logs ni en URLs (Ley 1581).
-- No usar la service role key de Supabase en el frontend.
+- No poner `DATABASE_URL` ni ninguna credencial de la base en el frontend.
 
 ## Criterio de commits
 

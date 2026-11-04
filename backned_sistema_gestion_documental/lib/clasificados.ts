@@ -3,7 +3,7 @@
  * @description Consulta de documentos por estado (bandejas "Clasificados" y "Por clasificar").
  * Va en: backned_sistema_gestion_documental/lib/clasificados.ts (reemplaza el anterior).
  */
-import { supabase } from "./supabase"; // AJUSTA si tu cliente se exporta con otro nombre
+import { db } from "./db";
 
 export interface FiltrosClasificados {
   /** "clasificado" (por defecto) o "por_clasificar". */
@@ -145,7 +145,7 @@ export async function listarClasificados(filtros: FiltrosClasificados = {}): Pro
   const limite = Math.min(Math.max(filtros.limite ?? 200, 1), 500);
   const estado = filtros.estado ?? "clasificado";
 
-  let consulta = supabase
+  let consulta = db
     .from("documento")
     .select(SELECT)
     .eq("estado", estado)
@@ -158,7 +158,7 @@ export async function listarClasificados(filtros: FiltrosClasificados = {}): Pro
 
   if (filtros.dependencia_id) consulta = consulta.eq("dependencia_id", filtros.dependencia_id);
 
-  // Se quitan los caracteres que rompen la sintaxis de .or() de PostgREST.
+  // Se quitan los caracteres que rompen la sintaxis de .or() (lib/db.ts).
   const q = filtros.q?.trim().replace(/[%,()*\\]/g, " ").trim();
   if (q) {
     consulta = consulta.or(

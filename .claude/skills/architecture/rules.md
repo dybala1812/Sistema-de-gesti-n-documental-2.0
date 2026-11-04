@@ -2,7 +2,7 @@
 
 ## Principios
 
-- Mantener la arquitectura actual (React + TypeScript + Vite + Tailwind v4 + shadcn/ui (frontend NOVA_FT); Supabase PostgreSQL; n8n; backend por definir (ver ia_contexto/spec/decisiones.md P-11)) mientras no haya una necesidad real de cambiarla; los cambios grandes se registran en `memory/`.
+- Mantener la arquitectura actual (React + TypeScript + Vite + Tailwind v4 + shadcn/ui (frontend NOVA_FT); PostgreSQL 18 propio (driver `pg`, D-31); n8n; backend Next.js (ver ia_contexto/spec/decisiones.md P-11)) mientras no haya una necesidad real de cambiarla; los cambios grandes se registran en `memory/`.
 - Una responsabilidad por módulo/componente. Si un archivo mezcla UI, lógica de negocio y acceso a datos, extraer progresivamente.
 - Si una regla, patrón o instrucción se vuelve repetitiva, documentarla en `.agents/skills/`.
 

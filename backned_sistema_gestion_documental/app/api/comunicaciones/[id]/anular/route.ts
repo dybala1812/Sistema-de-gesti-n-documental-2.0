@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { supabase } from "../../../../../lib/supabase";
+import { db } from "../../../../../lib/db";
 import { obtenerUsuarioAutenticado, puedeGestionarComunicaciones } from "../../../../../lib/auth";
 import { obtenerComunicacion } from "../../../../../lib/comunicaciones";
 import { SolicitudInvalida, leer, parseBody, idRuta } from "../../../../../lib/n8n";
@@ -25,7 +25,7 @@ export async function POST(
       return errorResponse(`No se puede anular una comunicación "${previa.estado}"`);
     }
 
-    const { data, error } = await supabase.rpc("fn_anular_comunicacion_usuario", {
+    const { data, error } = await db.rpc("fn_anular_comunicacion_usuario", {
       p_usuario_id: usuario.id,
       p_comunicacion_id: comunicacionId,
       p_motivo: motivo,

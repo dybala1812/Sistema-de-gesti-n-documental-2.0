@@ -2,7 +2,7 @@
 
 ## Stack
 
-React + TypeScript + Vite + Tailwind v4 + shadcn/ui (frontend NOVA_FT); Supabase PostgreSQL; n8n; backend por definir (ver ia_contexto/spec/decisiones.md P-11)
+React + TypeScript + Vite + Tailwind v4 + shadcn/ui (frontend NOVA_FT); PostgreSQL 18 propio (D-31); n8n; backend Next.js (ver ia_contexto/spec/decisiones.md P-11)
 
 ## Reglas generales
 

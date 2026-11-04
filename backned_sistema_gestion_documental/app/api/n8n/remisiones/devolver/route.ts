@@ -6,7 +6,7 @@
  * Respuesta: { id, consecutivo, estado, dependencia_id, fecha_limite }
  */
 import { NextRequest } from "next/server";
-import { supabase } from "../../../../../lib/supabase";
+import { db } from "../../../../../lib/db";
 import { esServicioN8N } from "../../../../../lib/auth";
 import { obtenerComunicacion } from "../../../../../lib/comunicaciones";
 import { SolicitudInvalida, leer, parseBody } from "../../../../../lib/n8n";
@@ -45,13 +45,13 @@ export async function POST(request: NextRequest) {
       return errorResponse("La comunicación no está remitida a la dependencia indicada", 409);
     }
 
-    const { data: plazoParam } = await supabase.rpc("fn_parametro_entero", {
+    const { data: plazoParam } = await db.rpc("fn_parametro_entero", {
       p_clave: "plazo_respuesta_dias_habiles",
     });
     const plazo = plazoParam ? Number(plazoParam) : 5;
     const fechaLimite = sumarDiasHabiles(new Date(), plazo).toISOString().split("T")[0];
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await db
       .from("comunicacion")
       .update({
         estado: "devuelta",
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       return errorResponse(updateError.message, 422, { codigo: updateError.code });
     }
 
-    const { data: eventoDevolucion } = await supabase
+    const { data: eventoDevolucion } = await db
       .from("comunicacion_evento")
       .select("id")
       .eq("comunicacion_id", comunicacionId)
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
       const detalle: Record<string, unknown> = { plazo_dias_habiles: plazo };
       if (mensaje) detalle.mensaje = mensaje;
       if (usuarioId) detalle.usuario_id = usuarioId;
-      await supabase
+      await db
         .from("comunicacion_evento")
         .update({ message_id: messageId, detalle })
         .eq("id", eventoDevolucion.id);

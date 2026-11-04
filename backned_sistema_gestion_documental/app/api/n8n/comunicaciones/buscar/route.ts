@@ -5,7 +5,7 @@
  * Respuesta: array de comunicaciones con datos básicos.
  */
 import { NextRequest } from "next/server";
-import { supabase } from "../../../../../lib/supabase";
+import { db } from "../../../../../lib/db";
 import { esServicioN8N } from "../../../../../lib/auth";
 import { SolicitudInvalida, parseBody } from "../../../../../lib/n8n";
 import { handleError, jsonResponse, unauthorized, errorResponse } from "../../../../../lib/errors";
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       limite = n;
     }
 
-    let query = supabase
+    let query = db
       .from("comunicacion")
       .select("id, tipo, estado, consecutivo, asunto, remitente_nombre, remitente_correo, dependencia_id, fecha_recepcion")
       .limit(limite);

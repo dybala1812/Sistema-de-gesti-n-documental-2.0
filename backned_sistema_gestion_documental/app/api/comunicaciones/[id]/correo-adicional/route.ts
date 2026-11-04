@@ -6,7 +6,7 @@
  * registra el evento vía /api/n8n/correos/adicional.
  */
 import { NextRequest } from "next/server";
-import { supabase } from "../../../../../lib/supabase";
+import { db } from "../../../../../lib/db";
 import { obtenerUsuarioAutenticado, puedeGestionarComunicaciones } from "../../../../../lib/auth";
 import { obtenerComunicacion } from "../../../../../lib/comunicaciones";
 import { dispararWebhookN8N } from "../../../../../lib/n8nWebhook";
@@ -47,7 +47,7 @@ export async function POST(
       if (!dependenciaId) {
         throw new SolicitudInvalida("La comunicación no tiene dependencia asignada: elija a qué dependencia enviar el correo", "dependencia_id", "obligatorio");
       }
-      const { data } = await supabase
+      const { data } = await db
         .from("dependencia")
         .select("id, nombre, correo_oficial")
         .eq("id", dependenciaId)

@@ -9,7 +9,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ## Estado actual
 
 - **Backend**: pruebas unitarias con `node --test` en `tests/` (`npm test`; Node 24 importa los `.ts` de `lib/` sin compilar), tipos con `tsc` y ESLint.
-- **Base de datos**: `database/supabase/tests/pruebas_reglas.sql` prueba las reglas RN/RF en SQL; `probar_local.sh` aplica todas las migraciones en un PostgreSQL temporal, corre esas pruebas, revierte y mide la concurrencia de consecutivos (40 sesiones).
+- **Base de datos**: `database/tests/pruebas_reglas.sql` prueba las reglas RN/RF en SQL; `probar_local.sh` (o `probar_local.sh --docker`, sin PostgreSQL instalado) instala la base con `instalar_local.sh` en un PostgreSQL temporal, revisa los permisos de `sgd_backend`, corre esas pruebas, revierte y mide la concurrencia de consecutivos (40 sesiones).
 - **Frontend** `NOVA_FT/`: sin framework de tests ni linter; `npm run typecheck` (línea base 28 errores de NOVA) y `npx vite build`, más la verificación en el navegador.
 
 ## Verificación mínima obligatoria

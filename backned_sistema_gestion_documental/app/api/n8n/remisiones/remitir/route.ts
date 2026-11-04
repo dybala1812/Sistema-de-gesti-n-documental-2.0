@@ -9,7 +9,7 @@
  * la lógica equivalente aquí. Cuando se apliquen las migraciones, se puede volver a usar rutaN8N.
  */
 import { NextRequest } from "next/server";
-import { supabase } from "../../../../../lib/supabase";
+import { db } from "../../../../../lib/db";
 import { esServicioN8N } from "../../../../../lib/auth";
 import { obtenerComunicacion } from "../../../../../lib/comunicaciones";
 import { SolicitudInvalida, leer, parseBody } from "../../../../../lib/n8n";
@@ -46,13 +46,13 @@ export async function POST(request: NextRequest) {
       return errorResponse(`No se puede remitir una comunicación en estado "${previa.estado}"`, 409);
     }
 
-    const { data: plazoParam } = await supabase.rpc("fn_parametro_entero", {
+    const { data: plazoParam } = await db.rpc("fn_parametro_entero", {
       p_clave: "plazo_respuesta_dias_habiles",
     });
     const plazo = plazoDiasHabiles ?? (plazoParam ? Number(plazoParam) : null) ?? 5;
     const fechaLimite = sumarDiasHabiles(new Date(), plazo).toISOString().split("T")[0];
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await db
       .from("comunicacion")
       .update({
         dependencia_id: dependenciaId,
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
       return errorResponse(updateError.message, 422, { codigo: updateError.code });
     }
 
-    const { data: eventoRemision } = await supabase
+    const { data: eventoRemision } = await db
       .from("comunicacion_evento")
       .select("id")
       .eq("comunicacion_id", comunicacionId)
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
       const detalle: Record<string, unknown> = { plazo_dias_habiles: plazo };
       if (mensaje) detalle.mensaje = mensaje;
       if (usuarioId) detalle.usuario_id = usuarioId;
-      await supabase
+      await db
         .from("comunicacion_evento")
         .update({ message_id: messageId, detalle })
         .eq("id", eventoRemision.id);

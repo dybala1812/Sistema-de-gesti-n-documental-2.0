@@ -1,7 +1,9 @@
 # Flujos n8n — Bandeja de comunicaciones · SGD Archivo Central
 
 Referencia para construir los flujos n8n del **circuito de comunicaciones por correo** (pantalla *Bandeja de comunicaciones*, RF-AC-015 a RF-AC-018).
-Esquema completo: `../supabase/migrations/`. Si este documento y el SQL difieren, manda el SQL.
+> **Superado en parte por D-19 y D-31:** n8n ya no escribe en la base ni se conecta a ella; todas sus operaciones de datos pasan por las APIs del backend (`APIs_backend_n8n.md`) y no hay Supabase. Lo de abajo sobre "Supabase directo" y "nodo Postgres" queda como historia; las reglas de negocio y de idempotencia siguen valiendo.
+
+Esquema completo: `../migrations/`. Si este documento y el SQL difieren, manda el SQL.
 
 ## Alcance
 
@@ -27,7 +29,7 @@ n8n **solo** maneja la Bandeja de comunicaciones (D-15):
                 │      HTTP POST /api/archivos              + inserta fila en "archivo"
 n8n ────────────┤                                           └─► responde { archivo_id }
                 │
-                └── 2. Datos (filas) ──────► SUPABASE (nodo Postgres), usando ese archivo_id
+                └── 2. Datos (filas) ──────► BACKEND /api/n8n/* (D-19), usando ese archivo_id
 ```
 
 - **Adjuntos → backend.** Es el único que escribe en las carpetas y en la tabla `archivo` (D-02). n8n nunca guarda archivos en disco.
@@ -83,7 +85,7 @@ Authorization: Bearer {N8N_SERVICE_TOKEN}
 → 200 con el binario (Content-Type y Content-Disposition con el nombre original)
 ```
 
-Credenciales en n8n (nunca en el repo): `BACKEND_URL`, `N8N_SERVICE_TOKEN`, conexión Postgres de Supabase, cuenta del buzón institucional.
+Credenciales en n8n (nunca en el repo): `BACKEND_URL`, `N8N_SERVICE_TOKEN`, cuenta del buzón institucional.
 
 ## Reglas para todos los flujos
 

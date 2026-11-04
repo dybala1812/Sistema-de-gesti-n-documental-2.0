@@ -5,7 +5,7 @@
  * Respuesta: { id, nombre, correo_oficial, estado } o { id: null }
  */
 import { NextRequest } from "next/server";
-import { supabase } from "../../../../../lib/supabase";
+import { db } from "../../../../../lib/db";
 import { esServicioN8N } from "../../../../../lib/auth";
 import { SolicitudInvalida, leer, parseBody } from "../../../../../lib/n8n";
 import { handleError, jsonResponse, unauthorized, errorResponse } from "../../../../../lib/errors";
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     const b = await parseBody(request);
     const correo = (leer.texto(b, "correo", true) as string).toLowerCase();
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("dependencia")
       .select("id, nombre, correo_oficial, estado")
       .eq("estado", "activo")

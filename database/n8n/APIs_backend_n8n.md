@@ -1,6 +1,6 @@
 # APIs del backend que consumen los flujos de n8n
 
-> **Estado (2026-10-07): las 21 implementadas.** Las 19 de datos en `backned_sistema_gestion_documental/app/api/n8n/**/route.ts` (fábrica común en `lib/n8n.ts`); las funciones SQL en `database/supabase/migrations/20261007000900_n8n_funciones.sql` (probadas con `database/scripts/probar_local.sh`). Las 2 de archivos ya existían.
+> **Estado (2026-10-07): las 21 implementadas.** Las 19 de datos en `backned_sistema_gestion_documental/app/api/n8n/**/route.ts` (fábrica común en `lib/n8n.ts`); las funciones SQL en `database/migrations/20261007000900_n8n_funciones.sql` (probadas con `database/scripts/probar_local.sh`). Las 2 de archivos ya existían.
 > - Errores de reglas de negocio (`RN-AC-xx`, `RF-AC-xx`) → **409** con el texto original (F1 detecta `RN-AC-09`).
 > - Validación de la petición → **400** `{ error: "Datos inválidos", detalle }`. Token inválido → **401**.
 > - En #9, #10 y #12 el usuario se envía como `usuario` (también se acepta `usuario_id`).
@@ -15,7 +15,7 @@
 - Cuerpo y respuesta en JSON. Las llamadas son `POST` salvo `GET /api/archivos/{id}`.
 - **Respuesta siempre un objeto**, aunque no se inserte nada (por ejemplo `{ "id": null }`). Una respuesta vacía o `[]` hace que n8n no genere ítems y el flujo se detenga. Las dos que devuelven lista están marcadas como *array*.
 - Errores: código 4xx/5xx con el mensaje en el cuerpo. n8n lo recibe en `error`.
-- Cada API puede llamar por dentro a la función SQL que ya tienes (`supabase.rpc('n8n_...')`), así no se reescribe la lógica.
+- Cada API puede llamar por dentro a la función SQL que ya tienes (`db.rpc('n8n_...')`, `lib/db.ts`), así no se reescribe la lógica.
 
 ## F1 · Correo entrante (7)
 
@@ -82,6 +82,6 @@ Guarda una copia de cada correo que envía F5 para verlo desde el historial de l
 | 20 | `POST /api/archivos` | F1 | Recibe el adjunto (`multipart`: `archivo`, `categoria`, `contexto`) y devuelve el `archivo_id`. |
 | 21 | `GET /api/archivos/{id}` | F5 | Devuelve el binario del adjunto. |
 
-## Lo que sigue en el nodo Supabase
+## Pendiente: 4 nodos que aún usan Supabase (I-21)
 
-Estas 4 lecturas/inserciones simples siguen con el nodo Supabase y no cuentan arriba: leer `dependencia` activas (F1), crear el evento de acuse en `comunicacion_evento` (F1), leer `plantilla_correo` (F5) y leer el parámetro `buzon_archivo_central` (F6). Si las quieres también por API, serían 4 más (25 en total).
+Desde D-31 no hay Supabase: estas 4 lecturas/inserciones simples, que seguían con el nodo Supabase, **dejan de funcionar** y deben pasar a APIs del backend antes de activar la Bandeja: leer `dependencia` activas (F1), crear el evento de acuse en `comunicacion_evento` (F1), leer `plantilla_correo` (F5) y leer el parámetro `buzon_archivo_central` (F6). Serían 4 APIs más (25 en total).

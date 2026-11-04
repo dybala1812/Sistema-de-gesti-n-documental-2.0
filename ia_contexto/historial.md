@@ -10,6 +10,12 @@ Seguridad: secretos, validaciones, permisos revisados
 Commit: hash o "ninguno"
 -->
 
+## 2026-11-04 — SGD-098 en revisión | Sin Supabase: backend con PostgreSQL directo y guía de producción (D-31)
+Cambio: lib/db.ts con el driver pg reemplaza al cliente de Supabase (misma interfaz: rpc y from con relaciones); se retiran @supabase/supabase-js, PostgREST, Nginx /rest/v1/, claves JWT y variables SUPABASE_*; DATABASE_URL y rol sgd_backend (sin delete); database/supabase/* pasa a database/; migración 33 (RLS en nivel_formacion); /api/salud revisa la base; README.md y README_DEPLOY.md nuevos; D-31 e I-21.
+Tests: probar_local.sh --docker (36 migraciones, 164 OK, 40 consecutivos, permisos de sgd_backend); npm test 21/21; tests/db.test.mjs 7/7; tsc y next build limpios; rutas probadas con next dev y con el server standalone en producción; respaldo y restauración con el compose de producción.
+Seguridad: sin secretos en el repo (.env.ejemplo vacío); el backend ya no usa una clave de servicio sino un rol sin delete ni DDL; base sin puerto publicado y backend en 127.0.0.1.
+Commit: ninguno (pendiente del visto bueno del usuario).
+
 ## 2026-11-04 — SGD-096 y SGD-097 en revisión | NOVA lista para producción y fotos en la carga masiva del celular
 Cambio: SGD-096 en NOVA_FT (VITE_SGD_API_URL en el Dockerfile, blob: en frame-src), fusionado en main. SGD-097: la carga masiva de /movil acepta cámara y galería y pide los datos del estudiante cuando el nombre del archivo no los trae.
 Tests: tsc frontend 28 (línea base); vite build limpio; vista de celular en el navegador; prueba del usuario en su teléfono.

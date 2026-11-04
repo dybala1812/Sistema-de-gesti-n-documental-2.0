@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { db } from "@/lib/db";
 import { errorSistema } from "@/lib/errors";
 import { obtenerUsuarioAutenticado } from "@/lib/auth";
 
@@ -10,11 +10,11 @@ export async function GET(req: Request) {
     const anioActual = new Date().getFullYear();
     const anioMaximo = anioActual - 2; // TODO: leerlo de la tabla `parametro` si ya guardan ahí la regla de los dos años
 
-    const { data: deps, error: e1 } = await supabase
+    const { data: deps, error: e1 } = await db
       .from("dependencia").select("id, nombre").eq("estado", "activo").order("nombre");
     if (e1) throw e1;
 
-    const { data: ent, error: e2 } = await supabase
+    const { data: ent, error: e2 } = await db
       .from("transferencia").select("dependencia_id")
       .eq("anio", anioMaximo).is("anulado_en", null);
     if (e2) throw e2;

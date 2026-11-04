@@ -4,7 +4,8 @@
 #  ia_contexto, skills ni flujos de trabajo. Contiene solo:
 #    backned_sistema_gestion_documental/   backend (Dockerfile)
 #    database/                              migraciones, seed e instalador
-#    despliegue/                            docker-compose con base local y guía
+#    despliegue/                            docker-compose con PostgreSQL propio y respaldos
+#    README_DEPLOY.md                       guía de despliegue
 #  Cada ejecución agrega un commit a esa rama con la foto de <ref> (por defecto HEAD).
 #  Solo toma lo que está en commits: primero haga commit de los cambios.
 #
@@ -27,7 +28,7 @@ else
 fi
 
 find "$DIR" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-git archive "$REF" backned_sistema_gestion_documental database despliegue | tar -x -C "$DIR"
+git archive "$REF" backned_sistema_gestion_documental database despliegue README_DEPLOY.md | tar -x -C "$DIR"
 cat > "$DIR/README.md" <<TXT
 # SGD · Módulo Archivo Central — despliegue del backend
 
@@ -35,7 +36,7 @@ Rama generada con \`scripts/armar_rama_despliegue.sh\` desde el commit \`$SHA\` 
 No se edita a mano: los cambios se hacen en el repositorio principal y se vuelve a generar.
 
 Contiene solo el backend, la base de datos y la configuración de despliegue (sin el frontend de NOVA).
-Instrucciones: [despliegue/README.md](despliegue/README.md).
+Instrucciones: [README_DEPLOY.md](README_DEPLOY.md).
 TXT
 
 git -C "$DIR" add -A

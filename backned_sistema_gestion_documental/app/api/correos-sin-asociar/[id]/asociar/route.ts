@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { supabase } from "../../../../../lib/supabase";
+import { db } from "../../../../../lib/db";
 import { obtenerUsuarioAutenticado, puedeGestionarComunicaciones } from "../../../../../lib/auth";
 import { obtenerComunicacion } from "../../../../../lib/comunicaciones";
 import { SolicitudInvalida, leer, parseBody, idRuta } from "../../../../../lib/n8n";
@@ -25,7 +25,7 @@ export async function POST(
       return errorResponse(`No se puede asociar una respuesta a una comunicación "${comunicacion.estado}"`);
     }
 
-    const { data: correo, error: correoError } = await supabase
+    const { data: correo, error: correoError } = await db
       .from("correo_sin_asociar")
       .select("*")
       .eq("id", correoId)
@@ -35,7 +35,7 @@ export async function POST(
     if (correo.resuelto) return errorResponse("El correo ya fue resuelto");
 
     // Actualizar estado de la comunicación a respondida_dependencia
-    const { error: updError } = await supabase
+    const { error: updError } = await db
       .from("comunicacion")
       .update({ estado: "respondida_dependencia" })
       .eq("id", comunicacionId);
@@ -45,14 +45,14 @@ export async function POST(
     }
 
     // Insertar eventos
-    await supabase.from("comunicacion_evento").insert({
+    await db.from("comunicacion_evento").insert({
       comunicacion_id: comunicacionId,
       tipo: "asociacion_manual",
       usuario_id: usuario.id,
       detalle: { correo_id: correoId, de_correo: correo.de_correo },
     });
 
-    await supabase.from("comunicacion_evento").insert({
+    await db.from("comunicacion_evento").insert({
       comunicacion_id: comunicacionId,
       tipo: "respuesta_dependencia",
       estado_anterior: comunicacion.estado,
@@ -64,7 +64,7 @@ export async function POST(
     // Mover adjuntos del correo a la comunicación
     if (correo.adjuntos && Array.isArray(correo.adjuntos)) {
       for (const archivoId of correo.adjuntos) {
-        await supabase.from("comunicacion_adjunto").insert({
+        await db.from("comunicacion_adjunto").insert({
           comunicacion_id: comunicacionId,
           archivo_id: archivoId,
         });
@@ -72,7 +72,7 @@ export async function POST(
     }
 
     // Marcar correo como resuelto
-    await supabase
+    await db
       .from("correo_sin_asociar")
       .update({
         resuelto: true,

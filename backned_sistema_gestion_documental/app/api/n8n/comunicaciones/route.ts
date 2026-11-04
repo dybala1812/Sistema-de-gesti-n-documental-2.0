@@ -10,7 +10,7 @@
  */
 import { NextRequest } from "next/server";
 import { esServicioN8N } from "../../../../lib/auth";
-import { supabase, assertSupabaseConfig } from "../../../../lib/supabase";
+import { assertDbConfig, db } from "../../../../lib/db";
 import { SolicitudInvalida, leer, parseBody } from "../../../../lib/n8n";
 import { errorResponse, handleError, jsonResponse, unauthorized } from "../../../../lib/errors";
 
@@ -39,10 +39,10 @@ export async function POST(request: NextRequest) {
       throw new SolicitudInvalida(`cuerpo supera ${MAX_CUERPO} caracteres`, "cuerpo", "rango");
     }
 
-    assertSupabaseConfig();
+    assertDbConfig();
 
     // ── Registro (una transacción en la BD: comunicación + adjuntos) ───────
-    const { data, error } = await supabase.rpc("fn_registrar_comunicacion_n8n", {
+    const { data, error } = await db.rpc("fn_registrar_comunicacion_n8n", {
       p_message_id: messageId,
       p_remitente_nombre: leer.texto(b, "remitente_nombre"),
       p_remitente_correo: remitenteCorreo,

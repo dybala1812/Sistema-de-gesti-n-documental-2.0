@@ -2,7 +2,7 @@
 --  Carga / actualización del catálogo de dependencias (RF-AC-001).
 --  Idempotente: se puede ejecutar varias veces; actualiza por código.
 --  Reemplazar la lista con las dependencias y correos OFICIALES que entregue el cliente.
---  Uso: pegar en el SQL Editor de Supabase o: psql -f database/supabase/datos/dependencias.sql
+--  Uso: psql "$DATABASE_URL" -f database/datos/dependencias.sql
 -- =============================================================================
 begin;
 

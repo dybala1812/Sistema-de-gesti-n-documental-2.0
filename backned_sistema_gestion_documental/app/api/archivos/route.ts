@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { obtenerUsuarioAutenticado, extraerToken } from "../../../lib/auth";
 import { guardarArchivo } from "../../../lib/archivos";
-import { assertSupabaseConfig } from "../../../lib/supabase";
+import { assertDbConfig } from "../../../lib/db";
 import { SolicitudInvalida } from "../../../lib/n8n";
 import { handleError, jsonResponse, errorResponse } from "../../../lib/errors";
 
@@ -12,7 +12,7 @@ function esN8N(request: NextRequest): boolean {
 
 export async function POST(request: NextRequest) {
   try {
-    assertSupabaseConfig();
+    assertDbConfig();
     let usuario;
     const esServicioN8N = esN8N(request);
     if (!esServicioN8N) {

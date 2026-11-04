@@ -72,11 +72,11 @@ export function errorSistema(clave: ClaveErrorSistema, status = 500, extra: { de
   return Response.json(cuerpo, { status: status >= 500 ? status : 500 });
 }
 
-/** Deduce el error de sistema a partir del código de PostgreSQL / PostgREST. */
+/** Deduce el error de sistema a partir del código de PostgreSQL (SQLSTATE). */
 export function claveSistemaPorCodigo(codigo?: string): ClaveErrorSistema {
   if (!codigo) return "INTERNO";
-  if (codigo === "PGRST202" || codigo === "PGRST205" || codigo === "42883" || codigo === "42P01") return "MIGRACION";
-  if (/^(PGRST|[0-9A-Z]{5}$)/.test(codigo)) return "BASE_DATOS";
+  if (codigo === "42883" || codigo === "42P01") return "MIGRACION"; // función o tabla que no existe
+  if (/^[0-9A-Z]{5}$/.test(codigo)) return "BASE_DATOS";
   return "INTERNO";
 }
 
@@ -170,8 +170,8 @@ export function handleError(error: unknown): Response {
   if ((error as { code?: string } | null)?.code === "ENOENT") {
     return errorSistema("ALMACENAMIENTO", 500);
   }
-  // Configuración de Supabase incompleta (assertSupabaseConfig).
-  if (error instanceof Error && /SUPABASE|Supabase no está configurado|variables de entorno/i.test(error.message)) {
+  // Conexión a PostgreSQL sin configurar (assertDbConfig).
+  if (error instanceof Error && /DATABASE_URL|variables de entorno/i.test(error.message)) {
     return errorSistema("CONFIGURACION", 500, { detalle: error.message });
   }
 

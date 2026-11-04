@@ -12,7 +12,7 @@
  */
 import { NextRequest } from "next/server";
 import { esServicioN8N } from "./auth";
-import { supabase, assertSupabaseConfig } from "./supabase";
+import { assertDbConfig, db } from "./db";
 import { columnaDuplicada, consecutivoDuplicado, errorResponse, errorSistema, handleError, jsonResponse, unauthorized } from "./errors";
 
 type Cuerpo = Record<string, unknown>;
@@ -109,7 +109,7 @@ type Opciones = {
   mapear?: (data: unknown) => unknown;
 };
 
-/** Normaliza el resultado de supabase.rpc a objeto (o array si `lista`). */
+/** Normaliza el resultado de db.rpc a objeto (o array si `lista`). */
 function normalizar(data: unknown, opciones: Opciones): unknown {
   if (opciones.mapear) return opciones.mapear(data);
   if (opciones.lista) return Array.isArray(data) ? data : data == null ? [] : [data];
@@ -140,9 +140,9 @@ export function rutaN8N(opciones: Opciones) {
       }
 
       const params = opciones.parametros ? opciones.parametros(cuerpo) : {};
-      assertSupabaseConfig();
+      assertDbConfig();
 
-      const { data, error } = await supabase.rpc(opciones.funcion, params);
+      const { data, error } = await db.rpc(opciones.funcion, params);
       if (error) return errorDeBase(error);
 
       return jsonResponse(normalizar(data, opciones));
@@ -192,7 +192,7 @@ function inferirCampoTipoDetalle(detalle?: string | null): { campo?: string; tip
 }
 
 /**
- * Traduce un error de PostgreSQL/PostgREST a una respuesta HTTP con el contrato de RN-AC-15:
+ * Traduce un error de PostgreSQL a una respuesta HTTP con el contrato de RN-AC-15:
  * reglas de negocio y datos inválidos → error de formulario (4xx, con campo);
  * consecutivo repetido, contador, migración faltante o fallo de la base → error de sistema (5xx, con número).
  */
@@ -220,7 +220,7 @@ function errorDeBase(error: { message: string; code?: string; details?: string |
     case "22P02": // texto con formato inválido (uuid, número…)
     case "22007": // fecha inválida
       return errorResponse(mensaje, 400, extra);
-    case "PGRST202": // función no encontrada (migración no aplicada)
+    case "42883": // función no encontrada (migración no aplicada)
       return errorSistema("MIGRACION", 500, { detalle: `no existe la función SQL (${mensaje})` });
     default:
       console.error("[base de datos]", error);

@@ -9,7 +9,7 @@
  *     - correo adicional / respuesta de la dependencia por correo → detalle del evento;
  *     - remisión / devolución → solo el mensaje escrito por Archivo Central (parcial).
  */
-import { supabase } from "./supabase";
+import { db } from "./db";
 import type { AdjuntoCom, Comunicacion, TipoEvento } from "./comunicaciones";
 
 export interface CorreoEvento {
@@ -72,7 +72,7 @@ function texto(v: unknown): string | null {
 
 async function adjuntosPorIds(ids: string[]): Promise<AdjuntoCom[]> {
   if (!ids.length) return [];
-  const { data, error } = await supabase.from("archivo").select("id, nombre_original, tamano_bytes, mime").in("id", ids);
+  const { data, error } = await db.from("archivo").select("id, nombre_original, tamano_bytes, mime").in("id", ids);
   if (error) throw new Error(error.message);
   return (data ?? []).map((a) => ({
     archivo_id: String(a.id),
@@ -84,7 +84,7 @@ async function adjuntosPorIds(ids: string[]): Promise<AdjuntoCom[]> {
 
 /** Adjuntos de una comunicación; `eventoId` null = los del correo original. */
 async function adjuntosDe(comunicacionId: number, eventoId: number | null): Promise<AdjuntoCom[]> {
-  let q = supabase.from("comunicacion_adjunto").select("archivo_id").eq("comunicacion_id", comunicacionId);
+  let q = db.from("comunicacion_adjunto").select("archivo_id").eq("comunicacion_id", comunicacionId);
   q = eventoId === null ? q.is("evento_id", null) : q.eq("evento_id", eventoId);
   const { data, error } = await q;
   if (error) throw new Error(error.message);
@@ -93,15 +93,15 @@ async function adjuntosDe(comunicacionId: number, eventoId: number | null): Prom
 
 const CAMPOS_COPIA = "message_id, para, asunto, cuerpo, archivo_ids, enviado_en";
 
-/** PGRST205 = la tabla correo_enviado aún no existe (migración 14 sin aplicar): se usa lo que ya había. */
+/** 42P01 = la tabla correo_enviado aún no existe (migración 14 sin aplicar): se usa lo que ya había. */
 function errorCopia(error: { code?: string; message: string }): null {
-  if (error.code === "PGRST205") return null;
+  if (error.code === "42P01") return null;
   throw new Error(error.message);
 }
 
 async function copiaPorMessageId(messageId: string | null): Promise<CopiaFila | null> {
   if (!messageId) return null;
-  const { data, error } = await supabase.from("correo_enviado").select(CAMPOS_COPIA).eq("message_id", messageId).maybeSingle();
+  const { data, error } = await db.from("correo_enviado").select(CAMPOS_COPIA).eq("message_id", messageId).maybeSingle();
   if (error) return errorCopia(error);
   return (data as CopiaFila | null) ?? null;
 }
@@ -109,7 +109,7 @@ async function copiaPorMessageId(messageId: string | null): Promise<CopiaFila | 
 /** Copia de la misma comunicación y plantilla enviada más cerca de la hora del evento. */
 async function copiaCercana(comunicacionId: number, plantilla: string, fechaEvento: string): Promise<CopiaFila | null> {
   const t = Date.parse(fechaEvento);
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("correo_enviado")
     .select(CAMPOS_COPIA)
     .eq("comunicacion_id", comunicacionId)
@@ -123,7 +123,7 @@ async function copiaCercana(comunicacionId: number, plantilla: string, fechaEven
 }
 
 async function salidaDe(entradaId: number) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("comunicacion")
     .select("id, message_id, asunto, cuerpo, destinatario_correo, fecha_recepcion")
     .eq("comunicacion_entrada_id", entradaId)
@@ -136,7 +136,7 @@ async function salidaDe(entradaId: number) {
 }
 
 export async function obtenerCorreoDeEvento(com: Comunicacion, eventoId: number): Promise<CorreoEvento> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("comunicacion_evento")
     .select("id, comunicacion_id, tipo, message_id, detalle, creado_en")
     .eq("id", eventoId)

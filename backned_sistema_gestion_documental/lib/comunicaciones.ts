@@ -3,7 +3,7 @@
  */
 import { unlink } from "fs/promises";
 import { join } from "path";
-import { supabase } from "./supabase";
+import { db } from "./db";
 import type { UsuarioSGD } from "./auth";
 
 const RAIZ_ARCHIVOS = process.env.RAIZ_ARCHIVOS ?? "./archivos_sgd";
@@ -111,7 +111,7 @@ function normalizarTexto(val: unknown): string | null {
   if (val === null || val === undefined) return null;
   if (typeof val === "string") return val;
   if (typeof val === "object") {
-    // Si es un objeto con campo nombre (relación de Supabase), extrae el nombre.
+    // Si es un objeto con campo nombre (relación embebida), extrae el nombre.
     const obj = val as Record<string, unknown>;
     if (typeof obj.nombre === "string") return obj.nombre;
     if (typeof obj.name === "string") return obj.name;
@@ -145,7 +145,7 @@ function normalizarDetalle(val: unknown): string | null {
 function normalizarAdjuntos(val: unknown): AdjuntoCom[] {
   if (!Array.isArray(val)) return [];
   return val.map((item: unknown) => {
-    // Supabase puede devolver { archivo: { id, nombre_original, tamano_bytes, mime } }
+    // La relación embebida puede devolver { archivo: { id, nombre_original, tamano_bytes, mime } }
     if (item && typeof item === "object" && "archivo" in (item as object)) {
       const archivo = (item as { archivo?: Record<string, unknown> }).archivo ?? {};
       return {
@@ -223,7 +223,7 @@ export async function listarComunicaciones(
   usuario: UsuarioSGD,
   filtros: FiltroBandeja
 ): Promise<Comunicacion[]> {
-  let query = supabase
+  let query = db
     .from("comunicacion")
     .select(
       `
@@ -279,7 +279,7 @@ export async function listarComunicaciones(
 }
 
 export async function obtenerComunicacion(id: number): Promise<Comunicacion | null> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("comunicacion")
     .select(
       `
@@ -306,7 +306,7 @@ export async function obtenerComunicacion(id: number): Promise<Comunicacion | nu
 }
 
 export async function listarCorreosSinAsociar(): Promise<CorreoSinAsociar[]> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("correo_sin_asociar")
     .select(
       `
@@ -344,7 +344,7 @@ export async function listarCorreosSinAsociar(): Promise<CorreoSinAsociar[]> {
 }
 
 export async function listarDependencias(): Promise<DependenciaCom[]> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("dependencia")
     .select("id, codigo, nombre, correo_oficial")
     .eq("estado", "activo")
@@ -365,7 +365,7 @@ export async function listarDependencias(): Promise<DependenciaCom[]> {
  * Elimina físicamente una comunicación, sus eventos, adjuntos y archivos del disco.
  * Rompe RN-AC-06 (sin borrado físico). No usar en producción.
  *
- * Requiere que exista la función SQL fn_eliminar_comunicacion_prueba en Supabase,
+ * Requiere que exista la función SQL fn_eliminar_comunicacion_prueba en la base,
  * creada manualmente porque la BD tiene triggers que bloquean DELETE (RN-AC-12).
  */
 export async function eliminarComunicacionFisica(id: number): Promise<void> {
@@ -379,13 +379,13 @@ export async function eliminarComunicacionFisica(id: number): Promise<void> {
     ...(salida?.adjuntos.map(a => a.archivo_id) ?? []),
   ].filter(Boolean);
 
-  const { data: archivos } = await supabase
+  const { data: archivos } = await db
     .from("archivo")
     .select("id, ruta_relativa")
     .in("id", todosIdsArchivo);
 
   // La función SQL desactiva triggers y borra en cascada.
-  const { error } = await supabase.rpc("fn_eliminar_comunicacion_prueba", {
+  const { error } = await db.rpc("fn_eliminar_comunicacion_prueba", {
     p_comunicacion_id: id,
   });
 

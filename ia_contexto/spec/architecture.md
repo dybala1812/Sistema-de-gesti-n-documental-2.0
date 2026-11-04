@@ -20,7 +20,7 @@ Fuente: F-02 v1.1 §2.1, §2.4, §5.2 y RN-AC-08/14. Lo marcado **(propuesta)** 
                      │                               │
                      ▼                               ▼
      ┌──────────────────────────────┐   ┌──────────────────────────────┐
-     │ Supabase (PostgreSQL)        │   │ Carpetas locales de archivos │
+     │ PostgreSQL 18 (propio)       │   │ Carpetas locales de archivos │
      │  tablas del módulo,          │   │  archivos (PDF/JPG/PNG/XLSX) │
      │  función de consecutivos,    │   │  BD referencia cada uno por id│
      │  funciones de estado         │   └──────────────▲───────────────┘
@@ -61,7 +61,7 @@ Reglas para los flujos:
 
 ## Entidades principales
 
-**Esquema implementado:** `backned_sistema_gestion_documental/supabase/migrations/` (ver su `README.md`). La tabla siguiente es el resumen original; si difiere, manda el SQL.
+**Esquema implementado:** `database/migrations/` (ver `database/README.md`). La tabla siguiente es el resumen original; si difiere, manda el SQL.
 
 | Entidad | Campos clave | Notas |
 |---|---|---|
@@ -132,7 +132,7 @@ Sin número de error y sin consecutivo: un fallo de validación **no consume** c
 | 1000 | INTERNO | Ocurrió un error inesperado en el servidor | Excepción no prevista |
 | 1001 | BASE_DATOS | La base de datos no pudo completar la operación | Error de PostgreSQL/PostgREST que no es de validación |
 | 1002 | MIGRACION | Falta aplicar una migración en la base de datos | Función o tabla inexistente (PGRST202, 42883, 42P01) |
-| 1003 | CONFIGURACION | Falta configuración en el servidor | Variables de entorno de Supabase u otras ausentes |
+| 1003 | CONFIGURACION | Falta configuración en el servidor | `DATABASE_URL` u otras variables de entorno ausentes |
 | 1004 | SERVICIO_EXTERNO | Un servicio externo (n8n o NOVA) no respondió | Webhook de n8n o perfil de NOVA caído |
 | 1005 | ALMACENAMIENTO | No se pudo leer o guardar el archivo en el almacenamiento | Archivo ausente en disco (sin exponer la ruta) |
 | 1010 | CONSECUTIVO | No se pudo generar el consecutivo | Falla de `fn_siguiente_consecutivo` |
@@ -140,12 +140,12 @@ Sin número de error y sin consecutivo: un fallo de validación **no consume** c
 
 Un número nuevo se agrega al catálogo (sin reutilizar números) y a la prueba que verifica que no se repiten.
 
-## Despliegue en producción (D-29)
+## Despliegue en producción (D-29, D-31)
 
-Base de datos local, sin Supabase: `despliegue/docker-compose.yml` levanta PostgreSQL 18, PostgREST (detrás de un Nginx que expone `/rest/v1/`, como Supabase) y el backend (`backned_sistema_gestion_documental/Dockerfile`, Next.js standalone). Solo el backend se publica. Las migraciones las aplica `database/scripts/instalar_local.sh` (tabla `sgd_migracion`). Lo que se entrega a producción va en la rama `despliegue-backend` (sin `NOVA_FT/` ni `ia_contexto/`), que arma `scripts/armar_rama_despliegue.sh`. Guía: `despliegue/README.md`.
+PostgreSQL propio, sin Supabase: `despliegue/docker-compose.yml` levanta PostgreSQL 18 (volumen `datos_postgres`), el contenedor `migraciones` (aplica `database/scripts/instalar_local.sh`: migraciones pendientes según `sgd_migracion`, `seed.sql` y el rol `sgd_backend`) y el backend (`backned_sistema_gestion_documental/Dockerfile`, Next.js standalone), que se conecta directo con el driver `pg` (`DATABASE_URL`). Solo el backend se publica, detrás del proxy HTTPS. Respaldos: `despliegue/respaldar.sh` (base y archivos juntos). Lo que se entrega a producción va en la rama `despliegue-backend` (sin `NOVA_FT/` ni `ia_contexto/`), que arma `scripts/armar_rama_despliegue.sh`. Guía: `README_DEPLOY.md`.
 
 ## Seguridad de datos (propuesta)
 
-- Activar **RLS** en todas las tablas de Supabase; n8n usa una credencial de servicio guardada solo en n8n.
+- **RLS** activo en todas las tablas (la migración 33 cubre `nivel_formacion`); solo entran el dueño y `sgd_backend`. n8n no se conecta a la base: usa las APIs del backend con `N8N_SERVICE_TOKEN`.
 - Los archivos nunca se sirven por ruta pública: descarga mediante endpoint con sesión o enlace temporal firmado (RNF-AC-02).
 - La auditoría solo admite INSERT (sin UPDATE/DELETE, ni siquiera para ADM).

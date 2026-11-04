@@ -45,7 +45,7 @@ test("los números del catálogo no se repiten", () => {
 test("errorResponse elige la forma según el código HTTP", async () => {
   const f = await leer(errorResponse("Datos inválidos", 400, { detalle: "cuerpo es obligatorio", campo: "cuerpo" }));
   assert.deepEqual(f.cuerpo, { error: "Datos inválidos: cuerpo es obligatorio", campo: "cuerpo" });
-  const s = await leer(errorResponse("Falta la función", 500, { codigo: "PGRST202" }));
+  const s = await leer(errorResponse("Falta la función", 500, { codigo: "42883" }));
   assert.equal(s.cuerpo.error, ERRORES_SISTEMA.MIGRACION.numero);
   assert.match(s.cuerpo.motivo, /Falta la función/);
 });

@@ -1,12 +1,12 @@
-# SGD · Archivo Central — producción con base de datos local (D-29), sin Supabase.
+# SGD · Archivo Central — producción con PostgreSQL propio (D-29, D-31). Sin Supabase.
 #
-#   db           PostgreSQL 18 con los datos (volumen datos_postgres)
-#   migraciones  aplica las migraciones que falten y seed.sql; termina y se apaga
-#   postgrest    API de la base, la misma que ofrece Supabase (solo red interna)
-#   rest         pasa /rest/v1/ a PostgREST, como espera el cliente de Supabase (solo red interna)
-#   backend      el backend Next.js (puerto 3000; delante va el proxy HTTPS de producción)
+#   db           PostgreSQL 18 con los datos (volumen datos_postgres). Solo red interna.
+#   migraciones  aplica las migraciones que falten, seed.sql y el rol del backend; termina y se apaga
+#   backend      el backend Next.js (puerto 3000; delante va el proxy HTTPS de producción).
+#                Se conecta directo a PostgreSQL con el rol sgd_backend (driver pg).
 #
 # Uso (desde despliegue/):  cp .env.ejemplo .env   →   completar   →   docker compose up -d --build
+# Guía completa: README_DEPLOY.md en la raíz del repositorio.
 services:
   db:
     image: postgres:18-alpine
@@ -14,10 +14,12 @@ services:
       POSTGRES_DB: sgd
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD}
-      AUTHENTICATOR_PASSWORD: ${AUTHENTICATOR_PASSWORD:?Falta AUTHENTICATOR_PASSWORD}
+      TZ: ${TZ:-UTC}
     volumes:
       - datos_postgres:/var/lib/postgresql
-      - ./postgres/00_roles.sh:/docker-entrypoint-initdb.d/00_roles.sh:ro
+    # Para administrar la base desde el propio servidor (psql, pgAdmin por túnel SSH), descomentar:
+    # ports:
+    #   - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d sgd"]
       interval: 5s
@@ -32,53 +34,34 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/sgd
+      SGD_BACKEND_PASSWORD: ${SGD_BACKEND_PASSWORD:?Falta SGD_BACKEND_PASSWORD}
     volumes:
       - ../database:/database:ro
     entrypoint: ["bash", "/database/scripts/instalar_local.sh"]
     restart: "no"
 
-  postgrest:
-    image: postgrest/postgrest:v12.2.3
-    depends_on:
-      migraciones:
-        condition: service_completed_successfully
-    environment:
-      PGRST_DB_URI: postgres://authenticator:${AUTHENTICATOR_PASSWORD}@db:5432/sgd
-      PGRST_DB_SCHEMAS: public
-      PGRST_DB_ANON_ROLE: anon
-      PGRST_JWT_SECRET: ${JWT_SECRET:?Falta JWT_SECRET}
-      PGRST_DB_CHANNEL_ENABLED: "true"
-    restart: unless-stopped
-
-  rest:
-    image: nginx:1.27-alpine
-    depends_on:
-      - postgrest
-    volumes:
-      - ./nginx/rest.conf:/etc/nginx/conf.d/default.conf:ro
-    restart: unless-stopped
-
   backend:
     build: ../backned_sistema_gestion_documental
     image: sgd-backend:latest
     depends_on:
-      - rest
+      migraciones:
+        condition: service_completed_successfully
     environment:
-      SUPABASE_URL: http://rest:8000
-      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY:?Falta SERVICE_ROLE_KEY}
+      DATABASE_URL: postgres://sgd_backend:${SGD_BACKEND_PASSWORD}@db:5432/sgd
       NOVA_API_URL: ${NOVA_API_URL:?Falta NOVA_API_URL}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?Falta ALLOWED_ORIGINS}
       N8N_SERVICE_TOKEN: ${N8N_SERVICE_TOKEN:-}
       N8N_WEBHOOK_REMITIR_URL: ${N8N_WEBHOOK_REMITIR_URL:-}
       N8N_WEBHOOK_RESPONDER_URL: ${N8N_WEBHOOK_RESPONDER_URL:-}
       N8N_WEBHOOK_RECORDATORIO_URL: ${N8N_WEBHOOK_RECORDATORIO_URL:-}
+      TZ: ${TZ:-UTC}
     ports:
-      - "${PUERTO_BACKEND:-3000}:3000"
+      - "${PUERTO_BACKEND:-127.0.0.1:3000}:3000"
     volumes:
       - archivos_sgd:/data/archivos
     restart: unless-stopped
 
 volumes:
-  # Respaldar los dos juntos: la base referencia cada archivo por su id (RN-AC-14).
+  # Respaldar los dos juntos: la base referencia cada archivo por su id (RN-AC-14). Ver respaldar.sh.
   datos_postgres:
   archivos_sgd:

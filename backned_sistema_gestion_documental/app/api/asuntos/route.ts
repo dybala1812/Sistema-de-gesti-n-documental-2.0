@@ -5,7 +5,7 @@
 import { NextRequest } from "next/server";
 
 import { obtenerUsuarioAutenticado } from "../../../lib/auth";
-import { supabase } from "../../../lib/supabase"; // AJUSTA si tu cliente se exporta con otro nombre
+import { db } from "../../../lib/db";
 import { SolicitudInvalida } from "../../../lib/n8n";
 import { errorResponse, handleError, jsonResponse } from "../../../lib/errors";
 
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     if (!raw || !Number.isInteger(dependenciaId) || dependenciaId <= 0) {
       throw new SolicitudInvalida("dependencia_id debe ser un entero positivo", "dependencia_id", "rango");
     }
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("asunto")
       .select("id, nombre, trd:trd_id ( codigo )")
       .eq("dependencia_id", dependenciaId)

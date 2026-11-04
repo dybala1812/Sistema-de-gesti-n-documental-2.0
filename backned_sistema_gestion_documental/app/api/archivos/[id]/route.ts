@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { obtenerUsuarioAutenticado, extraerToken } from "../../../../lib/auth";
 import { obtenerArchivo } from "../../../../lib/archivos";
-import { assertSupabaseConfig, supabase } from "../../../../lib/supabase";
+import { assertDbConfig, db } from "../../../../lib/db";
 import { SolicitudInvalida } from "../../../../lib/n8n";
 import { errorResponse, handleError } from "../../../../lib/errors";
 
@@ -19,9 +19,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * con un aviso en consola; en producción se niega (nunca abierto por omisión).
  */
 async function puedeDescargar(usuarioId: number, archivoId: string): Promise<boolean> {
-  const { data, error } = await supabase.rpc("fn_archivo_puede_descargar", { p_usuario_id: usuarioId, p_archivo_id: archivoId });
+  const { data, error } = await db.rpc("fn_archivo_puede_descargar", { p_usuario_id: usuarioId, p_archivo_id: archivoId });
   if (!error) return data === true;
-  const falta = error.code === "PGRST202" || /fn_archivo_puede_descargar/.test(error.message);
+  const falta = error.code === "42883" || /fn_archivo_puede_descargar/.test(error.message);
   if (falta && process.env.NODE_ENV !== "production") {
     console.warn("Falta la migración 20261026000000_archivo_permiso_descarga.sql: la descarga no revisa el permiso por recurso.");
     return true;
@@ -35,7 +35,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    assertSupabaseConfig();
+    assertDbConfig();
     const n8n = esN8N(request);
     const usuario = n8n ? null : await obtenerUsuarioAutenticado(request);
 

@@ -47,7 +47,7 @@ Supuesto de partida: los documentos son **digitales desde 2020**; los anteriores
 
 ## Restricciones
 
-- **Tecnológicas**: PostgreSQL en **Supabase**; archivos **guardados localmente en carpetas**; la base guarda un **id** por archivo que lo referencia (con ruta relativa, hash y metadatos); **n8n** con acceso al buzón institucional y escritura directa en Supabase; frontend **React** + **PWA**.
+- **Tecnológicas**: PostgreSQL propio (el F-02 v1.1 dice Supabase; D-31 lo retira, ver I-21); archivos **guardados localmente en carpetas**; la base guarda un **id** por archivo que lo referencia (con ruta relativa, hash y metadatos); **n8n** con acceso al buzón institucional y escritura directa en Supabase; frontend **React** + **PWA**.
 - **Normativas**: Ley 594 de 2000 (Ley General de Archivos), Decreto 1080 de 2015, Ley 1581 de 2012 y Decreto 1377 de 2013 (datos personales). Calidad: ISO/IEC 25010.
 - Sin borrado definitivo desde la aplicación. Perfiles fijos.
 - Alcance académico sujeto al cronograma de la práctica profesional.

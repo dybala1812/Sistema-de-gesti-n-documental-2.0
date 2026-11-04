@@ -12,7 +12,7 @@ import { obtenerUsuarioAutenticado } from "../../../../../lib/auth";
 import { guardarArchivo } from "../../../../../lib/archivos";
 import { rpc, tienePermiso } from "../../../../../lib/catalogos";
 import { SolicitudInvalida, idRuta } from "../../../../../lib/n8n";
-import { supabase } from "../../../../../lib/supabase";
+import { db } from "../../../../../lib/db";
 import { errorResponse, errorSistema, forbidden, handleError, jsonResponse, notFound } from "../../../../../lib/errors";
 
 const MIGRACION = "20261022000000_transferencia_archivos.sql";
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
     const transferenciaId = idRuta(await params);
 
-    const { data: t, error } = await supabase
+    const { data: t, error } = await db
       .from("transferencia").select("id, tipo, anio, anulado_en").eq("id", transferenciaId).maybeSingle();
     if (error) throw error;
     if (!t) return notFound("No existe la transferencia");
@@ -49,12 +49,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // Duplicado en esta transferencia: se revisa antes de guardar para no dejar archivos sueltos.
     const buffer = Buffer.from(await archivo.arrayBuffer());
     const hash = createHash("sha256").update(buffer).digest("hex");
-    const { data: repetido, error: eRep } = await supabase
+    const { data: repetido, error: eRep } = await db
       .from("transferencia_archivo").select("id").eq("transferencia_id", transferenciaId).eq("hash_sha256", hash)
       .is("anulado_en", null).limit(1);
     if (eRep) {
-      if (eRep.code === "42P01" || eRep.code === "PGRST205") {
-        return errorSistema("MIGRACION", 500, { detalle: `ejecute database/supabase/migrations/${MIGRACION} en el SQL Editor de Supabase` });
+      if (eRep.code === "42P01") {
+        return errorSistema("MIGRACION", 500, { detalle: `aplique database/migrations/${MIGRACION} con database/scripts/instalar_local.sh` });
       }
       throw eRep;
     }

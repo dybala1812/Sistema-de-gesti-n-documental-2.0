@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase"; // AJUSTA: nombre/ruta real de tu cliente de Supabase
+import { db } from "@/lib/db";
 import { errorFormulario, errorSistema, forbidden } from "@/lib/errors";
 import { obtenerUsuarioAutenticado } from "@/lib/auth";
 import { autorizar } from "@/lib/catalogos";
@@ -31,7 +31,7 @@ export async function GET(req: Request) {
       return forbidden("No tiene permiso para esta acción: requiere el permiso cargas.transferencia");
     }
     const anio = new URL(req.url).searchParams.get("anio");
-    let q = supabase
+    let q = db
       .from("transferencia")
       .select("id, codigo, anio, tipo, estado, funcionario_entrega, descripcion, contenido, unidades, registrado_en, recibido_en, dependencia:dependencia_id(nombre)")
       .is("anulado_en", null)
@@ -47,7 +47,7 @@ export async function GET(req: Request) {
     const ids = filas.map(t => t.id);
     const porClasificar = new Map<number, number>();
     if (ids.length > 0) {
-      const { data: docs, error: e2 } = await supabase
+      const { data: docs, error: e2 } = await db
         .from("documento").select("transferencia_id")
         .in("transferencia_id", ids).eq("estado", "por_clasificar");
       if (e2) throw e2;
@@ -95,7 +95,7 @@ export async function POST(req: Request) {
       return errorFormulario("Faltan datos obligatorios", 400);
     if (!TIPOS.includes(b.tipo)) return errorFormulario("Tipo de entrega no válido", 400);
     if (usuario.perfil === "dependencia") {
-      const { data: propia, error: eDep } = await supabase
+      const { data: propia, error: eDep } = await db
         .from("dependencia").select("nombre").eq("id", usuario.dependencia_id ?? -1).maybeSingle();
       if (eDep) throw eDep;
       if (!propia || propia.nombre.trim().toLowerCase() !== String(b.dependencia).trim().toLowerCase())
@@ -138,14 +138,14 @@ export async function POST(req: Request) {
         return errorFormulario(`Falta el carro, estante o bandeja de la caja ${sinUbicacion.slice(0, 5).join(", ")}${sinUbicacion.length > 5 ? "…" : ""}`, 400, { campo: "cajas", tipo: "obligatorio" });
     }
 
-    // registrar_transferencia (en Supabase) exige al menos una fila de inventario. Sin detalle:
+    // registrar_transferencia (migración 31) exige al menos una fila de inventario. Sin detalle:
     // física → una fila por caja (con su ubicación); digital → una fila técnica "Digital"
     // (los documentos quedan ligados a la transferencia y el detalle los muestra en su lugar).
     const inventario = carpetas.length > 0 ? carpetas
       : b.tipo === "fisica" ? [...ubicacionDeCaja.keys()].map(caja => ({ caja }))
       : [{ caja: CAJA_DIGITAL, descripcion: "Documentos en digital: ver el acta de entrega" }];
 
-    const { data, error } = await supabase.rpc("registrar_transferencia", {
+    const { data, error } = await db.rpc("registrar_transferencia", {
       p: {
         dependencia: b.dependencia, anio: b.anio, tipo: b.tipo,
         contenido: b.contenido, responsable: b.responsable, ubicacion: b.ubicacion ?? "",
@@ -167,7 +167,7 @@ export async function POST(req: Request) {
     const avisos: string[] = [];
     if (creada?.id && ubicacionDeCaja.size > 0) {
       // Cada caja queda en el inventario con su ubicación: se actualiza si vino en el detalle, si no se crea.
-      const { data: existentes, error: eEx } = await supabase
+      const { data: existentes, error: eEx } = await db
         .from("inventario_item").select("caja").eq("transferencia_id", creada.id);
       if (eEx) throw eEx;
       const conFilas = new Set((existentes ?? []).map(i => String(i.caja)));
@@ -175,7 +175,7 @@ export async function POST(req: Request) {
       let fila = 1;
       for (const [caja, pos] of ubicacionDeCaja) {
         if (conFilas.has(caja)) {
-          const { error: eU } = await supabase
+          const { error: eU } = await db
             .from("inventario_item").update(pos).eq("transferencia_id", creada.id).eq("caja", caja);
           if (eU) { console.error("POST /api/transferencias (ubicación)", eU); avisos.push(`no se guardó la ubicación de la caja ${caja}`); }
         } else {
@@ -184,7 +184,7 @@ export async function POST(req: Request) {
         fila++;
       }
       if (nuevas.length > 0) {
-        const { error: eN } = await supabase.from("inventario_item").insert(nuevas);
+        const { error: eN } = await db.from("inventario_item").insert(nuevas);
         if (eN) { console.error("POST /api/transferencias (cajas)", eN); avisos.push("no se guardaron las cajas con su ubicación"); }
       }
     }
@@ -195,12 +195,12 @@ export async function POST(req: Request) {
       if (unidades) cambios.unidades = unidades;
       if (observaciones) cambios.descripcion = observaciones;
       if (Object.keys(cambios).length > 0) {
-        const { error: eT } = await supabase.from("transferencia").update(cambios).eq("id", creada.id);
+        const { error: eT } = await db.from("transferencia").update(cambios).eq("id", creada.id);
         if (eT) { console.error("POST /api/transferencias (datos)", eT); avisos.push("no se guardaron las observaciones o la cantidad"); }
       }
     }
     if (actaId && creada?.id) {
-      const { error: eActa } = await supabase
+      const { error: eActa } = await db
         .from("transferencia").update({ acta_archivo_id: actaId }).eq("id", creada.id);
       if (eActa) {
         console.error("POST /api/transferencias (acta)", eActa);

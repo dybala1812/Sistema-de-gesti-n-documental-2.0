@@ -7,7 +7,7 @@
 import { createHash, randomUUID } from "crypto";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { dirname, extname, join } from "path";
-import { supabase } from "./supabase";
+import { db } from "./db";
 import type { UsuarioSGD } from "./auth";
 
 const RAIZ = process.env.RAIZ_ARCHIVOS ?? "./archivos_sgd";
@@ -48,7 +48,7 @@ export async function validarParametrosArchivo(
   tamanoBytes: number,
   extension: string
 ): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
-  const { data: paramTamano } = await supabase.rpc("fn_parametro_entero", {
+  const { data: paramTamano } = await db.rpc("fn_parametro_entero", {
     p_clave: "tamano_maximo_archivo_mb",
   });
   const maxMb = paramTamano ?? 50;
@@ -56,7 +56,7 @@ export async function validarParametrosArchivo(
     return { ok: false, error: `Archivo excede ${maxMb} MB`, status: 413 };
   }
 
-  const { data: paramFormatos } = await supabase
+  const { data: paramFormatos } = await db
     .from("parametro")
     .select("valor")
     .eq("clave", "formatos_permitidos")
@@ -100,7 +100,7 @@ export async function guardarArchivo(
   await mkdir(dirname(rutaAbsoluta), { recursive: true });
   await writeFile(/*turbopackIgnore: true*/ rutaAbsoluta, buffer);
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("archivo")
     .insert({
       id,
@@ -134,7 +134,7 @@ export async function obtenerArchivo(archivoId: string): Promise<{
   nombre_original: string;
   mime: string;
 }> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("archivo")
     .select("ruta_relativa, nombre_original, mime")
     .eq("id", archivoId)

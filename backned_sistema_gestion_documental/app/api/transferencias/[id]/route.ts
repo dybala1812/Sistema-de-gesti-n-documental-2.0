@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase"; // AJUSTA: nombre/ruta real de tu cliente de Supabase
+import { db } from "@/lib/db";
 import { errorFormulario, errorSistema, forbidden } from "@/lib/errors";
 import { obtenerUsuarioAutenticado } from "@/lib/auth";
 import { autorizar } from "@/lib/catalogos";
@@ -33,7 +33,7 @@ export async function GET(req: Request, ctx: Ctx) {
       return forbidden("No tiene permiso para esta acción: requiere el permiso cargas.transferencia");
     }
 
-    const { data: t, error } = await supabase
+    const { data: t, error } = await db
       .from("transferencia")
       .select(`
         id, codigo, anio, tipo, estado, funcionario_entrega, descripcion, contenido, ubicacion_texto, unidades,
@@ -49,7 +49,7 @@ export async function GET(req: Request, ctx: Ctx) {
     if (!t || (usuario.perfil === "dependencia" && t.dependencia_id !== (usuario.dependencia_id ?? -1)))
       return errorFormulario("No existe la transferencia", 404);
 
-    const { data: items, error: e2 } = await supabase
+    const { data: items, error: e2 } = await db
       .from("inventario_item").select("*, ubicacion:ubicacion_id(id, carro, estante, bandeja, bodega, modulo)").eq("transferencia_id", id)
       .order("fila_origen", { ascending: true });
     if (e2) throw e2;
@@ -59,11 +59,11 @@ export async function GET(req: Request, ctx: Ctx) {
     let archivos: { id: string; nombre: string; mime: string; tamano: number }[] = [];
     let avisoArchivos: string | null = null;
     if (String(t.tipo) === "digital") {
-      const { data: filas, error: e3 } = await supabase
+      const { data: filas, error: e3 } = await db
         .from("transferencia_archivo").select("archivo:archivo_id(id, nombre_original, mime, tamano_bytes)")
         .eq("transferencia_id", id).is("anulado_en", null).order("id", { ascending: true });
-      if (e3 && (e3.code === "42P01" || e3.code === "PGRST205")) {
-        avisoArchivos = "Falta aplicar la migración 20261022000000_transferencia_archivos.sql en Supabase";
+      if (e3 && (e3.code === "42P01")) {
+        avisoArchivos = "Falta aplicar la migración 20261022000000_transferencia_archivos.sql (database/scripts/instalar_local.sh)";
       } else if (e3) {
         throw e3;
       }

@@ -8,7 +8,7 @@
  *  4. Se verifica que tenga perfil asignado y esté activo.
  */
 import { timingSafeEqual } from "crypto";
-import { supabase, assertSupabaseConfig } from "./supabase";
+import { assertDbConfig, db } from "./db";
 
 export type PerfilSGD =
   | "archivo_central"
@@ -102,7 +102,7 @@ export async function validarTokenNOVA(token: string): Promise<UsuarioSGD> {
   const esDesarrollo = esTokenDesarrollo(token);
   const perfil = esDesarrollo ? PERFIL_NOVA_DESARROLLO : await fetchPerfilNova(token);
 
-  const { data: usuario, error } = await supabase.rpc("fn_sincronizar_usuario_nova", {
+  const { data: usuario, error } = await db.rpc("fn_sincronizar_usuario_nova", {
     p_perfil: perfil as unknown as Record<string, unknown>,
   });
 
@@ -114,12 +114,12 @@ export async function validarTokenNOVA(token: string): Promise<UsuarioSGD> {
 
   // Usuario de prueba: perfil Archivo Central si aún no tiene uno asignado.
   if (esDesarrollo && !u.perfil) {
-    const { error: errPerfil } = await supabase.from("usuario").update({ perfil: "archivo_central" }).eq("id", u.id);
+    const { error: errPerfil } = await db.from("usuario").update({ perfil: "archivo_central" }).eq("id", u.id);
     if (errPerfil) throw new Error(`Error asignando perfil de desarrollo: ${errPerfil.message}`);
     u.perfil = "archivo_central";
   }
 
-  const { data: puede } = await supabase.rpc("fn_usuario_puede_ingresar", {
+  const { data: puede } = await db.rpc("fn_usuario_puede_ingresar", {
     p_usuario_id: u.id,
   });
 
@@ -149,11 +149,12 @@ export function extraerToken(request: Request): string | null {
 }
 
 export async function obtenerUsuarioAutenticado(request: Request): Promise<UsuarioSGD> {
-  assertSupabaseConfig();
+  // Primero el header: así la ruta es dinámica y el build nunca intenta conectarse a la base.
   const token = extraerToken(request);
   if (!token) {
     throw new Response(JSON.stringify({ error: "Token requerido" }), { status: 401 });
   }
+  assertDbConfig();
   // El token de pruebas también pasa por validarTokenNOVA: así el usuario existe en la tabla `usuario`.
   return validarTokenNOVA(token);
 }

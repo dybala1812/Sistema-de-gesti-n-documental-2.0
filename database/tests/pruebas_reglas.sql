@@ -255,10 +255,10 @@ begin
   insert into historia_documento (historia_id, archivo_id) values (v_h_grad, pg_temp.nuevo_archivo(v_hash));
   perform pg_temp.debe_fallar(format($q$ insert into historia_documento (historia_id, archivo_id) values (%s, pg_temp.nuevo_archivo(%L)) $q$, v_h_grad, v_hash), 'historia_documento_sin_duplicados');
 
-  -- Permisos: RA solo historias activas; AC todas.
+  -- Permisos: Registro Académico y Archivo Central ven todas (D-27); la custodia no cambia.
   v_ra := (fn_sincronizar_usuario_nova('{"id":"33333333-3333-3333-3333-333333333333","email":"ra@uniautonoma.edu.co","nombre":"Jorge","apellido":"Imbachí"}'::jsonb)).id;
   update usuario set perfil = 'registro_academico' where id = v_ra;
-  perform pg_temp.ok(fn_puede_ver_historia(v_ra, v_h_activa) and not fn_puede_ver_historia(v_ra, v_h_grad), 'RF-AC-020: Registro Académico no ve historias de graduados/retirados');
+  perform pg_temp.ok(fn_puede_ver_historia(v_ra, v_h_activa) and fn_puede_ver_historia(v_ra, v_h_grad), 'D-27: Registro Académico ve historias activas y de graduados/retirados');
   perform pg_temp.ok(fn_puede_ver_historia(v_ac, v_h_grad), 'Archivo Central ve todas las historias');
 end $$;
 

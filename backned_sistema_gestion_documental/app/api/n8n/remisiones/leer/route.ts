@@ -9,7 +9,7 @@
  *              o { id: null } si no existe.
  */
 import { NextRequest } from "next/server";
-import { supabase } from "../../../../../lib/supabase";
+import { db } from "../../../../../lib/db";
 import { esServicioN8N } from "../../../../../lib/auth";
 import { SolicitudInvalida, leer, parseBody } from "../../../../../lib/n8n";
 import { handleError, jsonResponse, unauthorized, errorResponse } from "../../../../../lib/errors";
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     const comunicacionId = leer.entero(b, "comunicacion_id", true) as number;
     const dependenciaId = leer.entero(b, "dependencia_id");
 
-    const { data: com, error: comError } = await supabase
+    const { data: com, error: comError } = await db
       .from("comunicacion")
       .select("id, tipo, estado, consecutivo, asunto, cuerpo, remitente_nombre, remitente_correo, dependencia_id")
       .eq("id", comunicacionId)
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     const depId = dependenciaId ?? com.dependencia_id;
     let dependencia: { id: number; nombre: string; estado: string; correo_oficial: string } | null = null;
     if (depId) {
-      const { data: depData } = await supabase
+      const { data: depData } = await db
         .from("dependencia")
         .select("id, nombre, estado, correo_oficial")
         .eq("id", depId)
@@ -45,11 +45,11 @@ export async function POST(request: NextRequest) {
       dependencia = depData;
     }
 
-    const { data: plazoParam } = await supabase.rpc("fn_parametro_entero", {
+    const { data: plazoParam } = await db.rpc("fn_parametro_entero", {
       p_clave: "plazo_respuesta_dias_habiles",
     });
 
-    const { data: adjuntos } = await supabase
+    const { data: adjuntos } = await db
       .from("comunicacion_adjunto")
       .select("archivo_id")
       .eq("comunicacion_id", comunicacionId)

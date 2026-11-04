@@ -1,13 +1,14 @@
 # ─────────────────────────────────────────────
 #  Sistema de Gestión Documental
 #  Frontend: NOVA_FT (Vite + React)
-#  Backend:  backned_sistema_gestion_documental (Django)
+#  Backend:  backned_sistema_gestion_documental (Next.js) · Base: database/ (PostgreSQL)
 # ─────────────────────────────────────────────
 
 # ── Variables de entorno / secretos ──
 .env
 .env.*
 !.env.example
+!.env.ejemplo
 *.pem
 *.key
 

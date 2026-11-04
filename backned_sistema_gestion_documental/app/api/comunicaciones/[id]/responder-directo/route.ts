@@ -11,7 +11,7 @@
  *  2. Dispara el webhook de n8n F3 para que envíe el correo y cierre la entrada.
  */
 import { NextRequest } from "next/server";
-import { supabase } from "../../../../../lib/supabase";
+import { db } from "../../../../../lib/db";
 import { obtenerUsuarioAutenticado, puedeGestionarComunicaciones } from "../../../../../lib/auth";
 import { obtenerComunicacion } from "../../../../../lib/comunicaciones";
 import { dispararWebhookN8N } from "../../../../../lib/n8nWebhook";
@@ -54,16 +54,16 @@ export async function POST(
     }
 
     // Prepara la comunicación para que F3 la acepte.
-    const { error: rpcError } = await supabase.rpc("fn_responder_directo", {
+    const { error: rpcError } = await db.rpc("fn_responder_directo", {
       p_usuario_id: usuario.id,
       p_comunicacion_id: comunicacionId,
       p_mensaje: cuerpo,
     });
     if (rpcError) {
       // La función no existe en la base: falta aplicar la migración (no es un error del usuario).
-      if (rpcError.code === "PGRST202") {
+      if (rpcError.code === "42883") {
         return errorSistema("MIGRACION", 500, {
-          detalle: "no existe fn_responder_directo; ejecute en el SQL Editor 20261011000000_f4_manual_y_correo_adicional.sql y 20261012000000_responder_directo_transicion.sql",
+          detalle: "no existe fn_responder_directo; aplique con database/scripts/instalar_local.sh 20261011000000_f4_manual_y_correo_adicional.sql y 20261012000000_responder_directo_transicion.sql",
         });
       }
       // Reglas de negocio de la base (RN-AC-xx / RF-AC-xx) → conflicto de estado, no datos inválidos.

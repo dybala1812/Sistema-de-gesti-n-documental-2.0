@@ -18,7 +18,7 @@ import { guardarArchivo } from "../../../lib/archivos";
 import { rpc, tienePermiso } from "../../../lib/catalogos";
 import { SolicitudInvalida } from "../../../lib/n8n";
 import { errorResponse, forbidden, handleError, jsonResponse } from "../../../lib/errors";
-import { supabase } from "../../../lib/supabase";
+import { db } from "../../../lib/db";
 
 const MIGRACION = "20261025000000_historias_carga_busqueda.sql";
 const MIGRACION_LISTA = "20261028000000_historias_transferencias_busqueda.sql";
@@ -94,13 +94,13 @@ export async function POST(request: NextRequest) {
 
     // Duplicado antes de guardar el archivo: misma huella en la historia de ese estudiante y programa.
     const numero = datos.numero_documento.replace(/[^0-9A-Za-z]/g, "");
-    const { data: est } = await supabase.from("estudiante").select("id")
+    const { data: est } = await db.from("estudiante").select("id")
       .eq("tipo_documento", (datos.tipo_documento ?? "CC").toUpperCase()).eq("numero_documento", numero).maybeSingle();
     if (est) {
-      const { data: hist } = await supabase.from("historia_academica").select("id")
+      const { data: hist } = await db.from("historia_academica").select("id")
         .eq("estudiante_id", est.id).eq("programa_id", Number(datos.programa_id)).maybeSingle();
       if (hist) {
-        const { data: rep } = await supabase.from("historia_documento").select("id")
+        const { data: rep } = await db.from("historia_documento").select("id")
           .eq("historia_id", hist.id).eq("hash_sha256", hash).eq("anulado", false).limit(1);
         if (rep && rep.length > 0) {
           return errorResponse("Archivo duplicado", 409, { detalle: "Ese archivo ya está en la historia del estudiante", campo: "archivo", tipo: "duplicado" });

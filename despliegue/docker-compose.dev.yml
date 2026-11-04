@@ -1,0 +1,43 @@
+# SGD · Archivo Central — base de datos para DESARROLLO (nunca en producción).
+# PostgreSQL 18 publicado solo en localhost:5432, con las migraciones y seed.sql aplicados.
+# El backend corre en la máquina con `npm run dev` y DATABASE_URL apuntando aquí.
+#
+#   docker compose -f docker-compose.dev.yml up -d
+#   Datos ficticios (opcional):
+#   docker compose -f docker-compose.dev.yml exec db psql -U postgres -d sgd -f /database/seed_demo.sql
+#   DATABASE_URL=postgres://sgd_backend:sgd_backend_dev@localhost:5432/sgd   (backend, .env.local)
+name: sgd-dev
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: sgd
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_dev}
+    ports:
+      - "127.0.0.1:${PUERTO_BD:-5432}:5432"
+    volumes:
+      - datos_postgres_dev:/var/lib/postgresql
+      - ../database:/database:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sgd"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  migraciones:
+    image: postgres:18-alpine
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres_dev}@db:5432/sgd
+      SGD_BACKEND_PASSWORD: ${SGD_BACKEND_PASSWORD:-sgd_backend_dev}
+    volumes:
+      - ../database:/database:ro
+    entrypoint: ["bash", "/database/scripts/instalar_local.sh"]
+    restart: "no"
+
+volumes:
+  datos_postgres_dev:

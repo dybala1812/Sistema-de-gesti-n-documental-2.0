@@ -11,8 +11,8 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 - Los archivos `.env` nunca se suben al repo (verificar `.gitignore`).
 - Toda variable nueva se documenta en `.env.example` con un valor vacío o de ejemplo.
 - **Regla crítica:** las variables públicas del cliente (`VITE_*`, `NEXT_PUBLIC_*`, `EXPO_PUBLIC_*`, o las que van dentro de la app móvil) las puede leer cualquiera. Las claves de APIs de pago o privilegiadas van en un backend/función serverless.
-- Frontend (`NOVA_FT/.env.example`): `VITE_API_URL`, `VITE_RECAPTCHA_SITE_KEY` (pública), `VITE_GOOGLE_CLIENT_ID` (público). Ninguna clave de Supabase con rol `service_role` puede ir en `VITE_*`.
-- La credencial `service_role` de Supabase, las del buzón institucional y la del servicio de IA viven **solo** en el backend y en n8n (credenciales de n8n), nunca en el repo.
+- Frontend (`NOVA_FT/.env.example`): `VITE_API_URL`, `VITE_RECAPTCHA_SITE_KEY` (pública), `VITE_GOOGLE_CLIENT_ID` (público). Ninguna credencial de la base (`DATABASE_URL`) puede ir en `VITE_*`.
+- Las claves de PostgreSQL (`POSTGRES_PASSWORD`, `SGD_BACKEND_PASSWORD`), las del buzón institucional y la del servicio de IA viven **solo** en el backend y en n8n (credenciales de n8n), nunca en el repo.
 
 ## Validación de inputs
 

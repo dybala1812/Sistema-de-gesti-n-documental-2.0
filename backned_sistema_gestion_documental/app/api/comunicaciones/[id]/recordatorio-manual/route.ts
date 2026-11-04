@@ -5,7 +5,7 @@
  * registra el recordatorio vía /api/n8n/recordatorios/registrar.
  */
 import { NextRequest } from "next/server";
-import { supabase } from "../../../../../lib/supabase";
+import { db } from "../../../../../lib/db";
 import { obtenerUsuarioAutenticado, puedeGestionarComunicaciones } from "../../../../../lib/auth";
 import { obtenerComunicacion } from "../../../../../lib/comunicaciones";
 import { dispararWebhookN8N } from "../../../../../lib/n8nWebhook";
@@ -30,7 +30,7 @@ export async function POST(
       return errorResponse(`No se puede recordar una comunicación en estado "${com.estado}"`, 409);
     }
 
-    const { data: dep } = await supabase
+    const { data: dep } = await db
       .from("dependencia")
       .select("id, nombre, correo_oficial")
       .eq("id", com.dependencia_id)

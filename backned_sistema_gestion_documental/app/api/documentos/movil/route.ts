@@ -8,7 +8,7 @@ import { NextRequest } from "next/server";
 import { obtenerUsuarioAutenticado } from "../../../../lib/auth";
 import { alcanceDocumentos } from "../../../../lib/archivo";
 import { SELECT, aDTO, type Fila } from "../../../../lib/clasificados";
-import { supabase } from "../../../../lib/supabase";
+import { db } from "../../../../lib/db";
 import { handleError, jsonResponse } from "../../../../lib/errors";
 
 const ULTIMOS = 10;
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     const usuario = await obtenerUsuarioAutenticado(request);
     const dependenciaId = await alcanceDocumentos(usuario, "documentos.consultar");
 
-    let consulta = supabase
+    let consulta = db
       .from("documento").select(SELECT)
       .eq("origen", "app_movil").neq("estado", "anulado")
       .order("cargado_en", { ascending: false }).limit(ULTIMOS);

@@ -10,7 +10,7 @@
  *  - No hay borrado físico: inactivar exige motivo, que queda en la auditoría.
  *  - Los errores incluyen campo y tipo para que el formulario marque el campo.
  */
-import { supabase } from "./supabase";
+import { db } from "./db";
 import { SolicitudInvalida } from "./n8n";
 import { columnaDuplicada, errorFormulario, errorResponse, errorSistema } from "./errors";
 
@@ -267,7 +267,7 @@ const ETIQUETA = /^\[campo:([^|\]]+)\|tipo:([^|\]]+)\]\s*/;
 const MIGRACION_CATALOGOS = "20261017000000_catalogos_parametros_auditoria.sql";
 
 /**
- * Convierte un error de supabase.rpc en una Response lista para devolver.
+ * Convierte un error de db.rpc en una Response lista para devolver.
  * `migracion` es el archivo que crea la función, para el aviso de migración pendiente.
  */
 export function errorDeBase(error: { message: string; code?: string; details?: string | null }, migracion = MIGRACION_CATALOGOS): Response {
@@ -294,9 +294,9 @@ export function errorDeBase(error: { message: string; code?: string; details?: s
     }
     return errorResponse("Un valor está fuera del rango permitido", 400, { tipo: "rango", codigo: error.code });
   }
-  if (error.code === "PGRST202") {
+  if (error.code === "42883") {
     return errorSistema("MIGRACION", 500, {
-      detalle: `ejecute database/supabase/migrations/${migracion} en el SQL Editor de Supabase`,
+      detalle: `aplique database/migrations/${migracion} con database/scripts/instalar_local.sh`,
     });
   }
   console.error("[catálogos]", error);
@@ -315,7 +315,7 @@ function siDenegado(data: unknown): void {
  * También la usa lib/historico.ts (registro histórico).
  */
 export async function rpc<T>(funcion: string, params: Record<string, unknown>, migracion = MIGRACION_CATALOGOS): Promise<T> {
-  const { data, error } = await supabase.rpc(funcion, params);
+  const { data, error } = await db.rpc(funcion, params);
   if (error) throw errorDeBase(error, migracion);
   siDenegado(data);
   return data as T;
@@ -323,7 +323,7 @@ export async function rpc<T>(funcion: string, params: Record<string, unknown>, m
 
 /** ¿El usuario tiene el permiso? (lectura; no audita). */
 export async function tienePermiso(usuarioId: number, funcion: string): Promise<boolean> {
-  const { data, error } = await supabase.rpc("fn_tiene_permiso", { p_usuario_id: usuarioId, p_funcion: funcion });
+  const { data, error } = await db.rpc("fn_tiene_permiso", { p_usuario_id: usuarioId, p_funcion: funcion });
   if (error) throw errorDeBase(error);
   return data === true;
 }
@@ -335,10 +335,10 @@ export async function tienePermiso(usuarioId: number, funcion: string): Promise<
 export async function autorizar(
   usuarioId: number, funcion: string, accion: string, recursoTipo: string, recursoId?: string,
 ): Promise<boolean> {
-  const { data, error } = await supabase.rpc("fn_autorizar", {
+  const { data, error } = await db.rpc("fn_autorizar", {
     p_usuario_id: usuarioId, p_funcion: funcion, p_accion: accion, p_recurso_tipo: recursoTipo, p_recurso_id: recursoId ?? null,
   });
-  if (error?.code === "PGRST202") return tienePermiso(usuarioId, funcion);
+  if (error?.code === "42883") return tienePermiso(usuarioId, funcion);
   if (error) throw errorDeBase(error, "20261101000000_autorizar_accion.sql");
   return data === true;
 }
@@ -355,7 +355,7 @@ export interface ListarOpciones {
 
 /** Falta una relación o columna de una migración nueva (p. ej. nivel_id antes de la migración 27). */
 const faltaRelacion = (e: { message: string; code?: string }) =>
-  e.code === "PGRST200" || e.code === "42703" || /relationship|does not exist|schema cache/i.test(e.message);
+  e.code === "42703" || /relationship|does not exist|schema cache/i.test(e.message);
 
 export async function listarCatalogo(cfg: TablaConfig, opciones: ListarOpciones = {}) {
   try {
@@ -376,7 +376,7 @@ async function listarCon(cfg: TablaConfig, select: string, opciones: ListarOpcio
   const limite = Math.max(1, Math.min(1000, Number(opciones.limite) || 50));
   const desde = (pagina - 1) * limite;
 
-  let query = supabase.from(cfg.tabla).select(select, { count: "exact" });
+  let query = db.from(cfg.tabla).select(select, { count: "exact" });
   if (opciones.estado === "activo" || opciones.estado === "inactivo") query = query.eq("estado", opciones.estado);
   if (opciones.buscar?.trim()) {
     const termino = opciones.buscar.trim().replace(/[%_,()]/g, " ");
@@ -394,7 +394,7 @@ async function listarCon(cfg: TablaConfig, select: string, opciones: ListarOpcio
 }
 
 export async function obtenerCatalogo(cfg: TablaConfig, id: number) {
-  const { data, error } = await supabase.from(cfg.tabla).select(cfg.select).eq("id", id).maybeSingle();
+  const { data, error } = await db.from(cfg.tabla).select(cfg.select).eq("id", id).maybeSingle();
   if (error) throw errorDeBase(error);
   if (!data) throw errorResponse("Registro no encontrado", 404, { campo: "id", tipo: "existente" });
   return data;
@@ -457,7 +457,7 @@ export async function importarCatalogo(usuarioId: number, cfg: TablaConfig, fila
 // ── Parámetros, plantillas y auditoría (RF-AC-006, RF-AC-023) ────────────────
 
 export async function listarParametros() {
-  const { data, error } = await supabase.from("parametro").select("clave, valor, tipo, descripcion, minimo, maximo, actualizado_en").order("clave");
+  const { data, error } = await db.from("parametro").select("clave, valor, tipo, descripcion, minimo, maximo, actualizado_en").order("clave");
   if (error) throw errorDeBase(error);
   return data ?? [];
 }
@@ -470,7 +470,7 @@ export async function guardarParametro(usuarioId: number, clave: string, valor: 
 }
 
 export async function listarPlantillas() {
-  const { data, error } = await supabase.from("plantilla_correo").select("codigo, nombre, asunto, cuerpo, cuerpo_original, actualizado_en").order("codigo");
+  const { data, error } = await db.from("plantilla_correo").select("codigo, nombre, asunto, cuerpo, cuerpo_original, actualizado_en").order("codigo");
   if (error) throw errorDeBase(error);
   return data ?? [];
 }

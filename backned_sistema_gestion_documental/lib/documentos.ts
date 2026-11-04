@@ -7,7 +7,7 @@
  * si falta alguno, queda "por_clasificar".
  */
 import { createHash } from "node:crypto";
-import { supabase } from "./supabase"; // AJUSTA si tu cliente se exporta con otro nombre
+import { db } from "./db";
 import { guardarArchivo } from "./archivos";
 import { SolicitudInvalida } from "./n8n";
 import { SELECT, aDTO, type ClasificadoDTO, type Fila } from "./clasificados";
@@ -53,7 +53,7 @@ export interface DatosNuevoDocumento {
 }
 
 async function auditar(usuarioId: number | null, accion: string, documentoId: number, valores: Record<string, unknown>) {
-  const { error } = await supabase.from("auditoria").insert({
+  const { error } = await db.from("auditoria").insert({
     usuario_id: usuarioId, accion, recurso_tipo: "documento", recurso_id: String(documentoId), valores_nuevos: valores,
   });
   if (error) console.error("auditoría (no bloquea la operación):", error);
@@ -83,7 +83,7 @@ export async function crearDocumentoIndividual(
   const hash = createHash("sha256").update(buffer).digest("hex");
 
   // Duplicados: misma huella en un documento que no esté anulado.
-  const { data: repetido, error: eRep } = await supabase
+  const { data: repetido, error: eRep } = await db
     .from("documento").select("id").eq("hash_sha256", hash).is("anulado_en", null).limit(1);
   if (eRep) throw eRep;
   if (repetido && repetido.length > 0) throw new DocumentoDuplicado(repetido[0].id as number);
@@ -102,7 +102,7 @@ export async function crearDocumentoIndividual(
   const completo = !!(datos.asunto_id && consecutivo && datos.fecha);
   const ahora = new Date().toISOString();
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("documento")
     .insert({
       archivo_id: archivoId,

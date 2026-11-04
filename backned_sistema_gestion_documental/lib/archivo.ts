@@ -6,7 +6,7 @@
  */
 import { errorDeBase, rpc, tienePermiso } from "./catalogos";
 import type { UsuarioSGD } from "./auth";
-import { supabase } from "./supabase";
+import { db } from "./db";
 import { interpretarConsecutivo } from "./consecutivoTexto";
 import { SolicitudInvalida } from "./n8n";
 
@@ -69,11 +69,11 @@ export async function buscarArchivo(usuarioId: number, sp: URLSearchParams) {
  * permiso con fn_tiene_permiso (sin auditar) para no dejar las bandejas sin servicio.
  */
 export async function alcanceDocumentos(usuario: UsuarioSGD, funcion: "documentos.consultar" | "documentos.clasificar"): Promise<number | undefined> {
-  const { data, error } = await supabase.rpc("fn_alcance_consulta", {
+  const { data, error } = await db.rpc("fn_alcance_consulta", {
     p_usuario_id: usuario.id, p_funcion: funcion, p_recurso_tipo: "documento", p_recurso_id: null,
   });
   let permitido: boolean;
-  if (error?.code === "PGRST202") {
+  if (error?.code === "42883") {
     permitido = await tienePermiso(usuario.id, funcion);
   } else if (error) {
     throw errorDeBase(error, MIGRACION);

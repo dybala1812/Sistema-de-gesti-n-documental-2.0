@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { supabase } from "../../../../../lib/supabase";
+import { db } from "../../../../../lib/db";
 import { obtenerUsuarioAutenticado, puedeGestionarComunicaciones } from "../../../../../lib/auth";
 import { obtenerComunicacion } from "../../../../../lib/comunicaciones";
 import { SolicitudInvalida, idRuta } from "../../../../../lib/n8n";
@@ -17,7 +17,7 @@ export async function POST(
 
     const correoId = idRuta(await params);
 
-    const { data: correo, error: correoError } = await supabase
+    const { data: correo, error: correoError } = await db
       .from("correo_sin_asociar")
       .select("*")
       .eq("id", correoId)
@@ -26,7 +26,7 @@ export async function POST(
     if (correoError || !correo) return notFound("Correo no encontrado");
     if (correo.resuelto) return errorResponse("El correo ya fue resuelto");
 
-    const { data: creada, error } = await supabase.rpc("fn_registrar_correo_entrante_usuario", {
+    const { data: creada, error } = await db.rpc("fn_registrar_correo_entrante_usuario", {
       p_usuario_id: usuario.id,
       p_message_id: correo.message_id,
       p_remitente_nombre: correo.de_nombre,
@@ -46,7 +46,7 @@ export async function POST(
     // Mover adjuntos
     if (correo.adjuntos && Array.isArray(correo.adjuntos)) {
       for (const archivoId of correo.adjuntos) {
-        await supabase.from("comunicacion_adjunto").insert({
+        await db.from("comunicacion_adjunto").insert({
           comunicacion_id: nuevaId,
           archivo_id: archivoId,
         });
@@ -54,7 +54,7 @@ export async function POST(
     }
 
     // Evento de asociación manual
-    await supabase.from("comunicacion_evento").insert({
+    await db.from("comunicacion_evento").insert({
       comunicacion_id: nuevaId,
       tipo: "asociacion_manual",
       usuario_id: usuario.id,
@@ -62,7 +62,7 @@ export async function POST(
     });
 
     // Marcar correo como resuelto
-    await supabase
+    await db
       .from("correo_sin_asociar")
       .update({
         resuelto: true,

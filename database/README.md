@@ -1,38 +1,45 @@
-# Backend — SGD · Módulo Archivo Central
+# Base de datos — SGD · Módulo Archivo Central
 
-Por ahora contiene la **base de datos** (PostgreSQL / Supabase). La tecnología del servidor de aplicación sigue por decidir (`ia_contexto/spec/decisiones.md` P-11).
+PostgreSQL 18 propio (D-29, D-31), **sin Supabase**. Toda la lógica de negocio vive aquí: tablas, triggers, funciones `fn_*` (backend) y `n8n_*` (flujos de la Bandeja), RLS y auditoría inmutable. El backend se conecta directo con el driver `pg` (`backned_sistema_gestion_documental/lib/db.ts`) usando el rol `sgd_backend`.
 
 ```text
-supabase/
-  migrations/                     # aplicar en orden
-    20261007000100_base.sql                     extensiones, enums, utilidades, bloqueo de borrado
-    20261007000200_catalogos_y_usuarios.sql     dependencias, TRD, asuntos, catálogos, usuarios (NOVA), parámetros, plantillas, festivos
-    20261007000300_archivos_cargas_documentos.sql archivo (id), lotes, transferencias, inventario FUID, documentos, sugerencias IA
-    20261007000400_comunicaciones.sql           consecutivos atómicos, comunicaciones, estados, eventos, correos sin asociar, funciones F1–F4
-    20261007000500_historias_academicas.sql     estudiantes, historias, documentos de historia
-    20261007000600_auditoria_seguridad_vistas.sql auditoría inmutable, permisos, RLS, vistas
-  seed.sql                        # configuración obligatoria (parámetros, plantillas, permisos, tipos documentales)
-  seed_demo.sql                   # SOLO desarrollo: dependencias/TRD/asuntos/programas de los mockups
-  tests/pruebas_reglas.sql        # pruebas de reglas de negocio (se revierten al final)
-scripts/probar_local.sh           # levanta un PostgreSQL temporal y corre todo
-n8n/TABLAS_N8N.md                 # flujos n8n de la Bandeja de comunicaciones (F1–F6): tablas, consultas y subida de adjuntos
+migrations/                 # se aplican en orden por nombre (fecha); nunca se editan una vez aplicadas
+  20261007000100_base.sql   … 20261102000000_rls_nivel_formacion.sql (36 en total)
+seed.sql                    # configuración obligatoria (parámetros, plantillas, permisos, tipos documentales); idempotente
+seed_demo.sql               # SOLO desarrollo: dependencias, TRD, asuntos y programas ficticios de los mockups
+datos/dependencias.sql      # dependencias reales para cargar a mano si se desea
+tests/pruebas_reglas.sql    # pruebas de reglas de negocio (se revierten al final)
+instalacion/                # SQL único generado por scripts/armar_instalacion.sh (no editar)
+scripts/
+  instalar_local.sh         # instala o actualiza una base: migraciones pendientes + seed.sql + rol sgd_backend + permisos
+  probar_local.sh           # PostgreSQL temporal: instala, prueba reglas, concurrencia y permisos; lo borra al final
+  armar_instalacion.sh      # une migraciones + seed en instalacion/01_….sql (para psql sin bash)
+n8n/                        # contrato de las APIs que usa n8n (APIs_backend_n8n.md) y notas de tablas (TABLAS_N8N.md)
 ```
 
-## Probar localmente
-
-Requiere PostgreSQL 15+ instalado (no usa ni modifica los servicios existentes):
+## Instalar o actualizar una base
 
 ```bash
-PG_BIN="/c/Program Files/PostgreSQL/18/bin" bash scripts/probar_local.sh
+DATABASE_URL=postgres://postgres:<clave>@<host>:5432/sgd SGD_BACKEND_PASSWORD=<clave del backend>   ./database/scripts/instalar_local.sh
 ```
 
-Última ejecución (2026-10-07): 6 migraciones aplicadas, seeds idempotentes, **79 verificaciones OK** (49 de comportamiento esperado y 30 de rechazo de operaciones inválidas) y 40 consecutivos concurrentes sin repetir ni saltar.
+- `DATABASE_URL` es un **superusuario** (crea extensiones `pg_trgm` y `unaccent` y el rol del backend).
+- Lleva la cuenta en la tabla `sgd_migracion`: se corre en cada actualización y solo aplica lo nuevo. `select * from sgd_migracion order by nombre;` muestra lo aplicado.
+- Crea o actualiza `sgd_backend`: `login`, `bypassrls`, `select/insert/update` en las tablas, uso de secuencias y `execute` en las funciones. **Sin `delete`** (no hay borrado físico, además del trigger que lo bloquea), no es dueño del esquema ni superusuario. Revoca `connect` a `public`.
+- En Docker lo hace el servicio `migraciones` de `despliegue/docker-compose.yml` en cada `docker compose up`.
+- Base restaurada desde un respaldo que ya tiene todo: `MARCAR_APLICADAS=1` solo registra las migraciones.
+- **Nunca** cargar `seed_demo.sql` en producción.
 
-## Aplicar en Supabase
+> RLS está activo en todas las tablas y sin políticas: solo el dueño y `sgd_backend` (que salta RLS) leen y escriben. **Toda migración nueva** que cree una tabla debe hacer `alter table … enable row level security` (la prueba "RLS activo en todas las tablas" lo exige).
 
-Con Supabase CLI: `supabase db push` (usa `supabase/migrations/`) y luego ejecutar `seed.sql`. Sin CLI: pegar cada migración en orden en el SQL Editor, luego `seed.sql`. **No** ejecutar `seed_demo.sql` en producción.
+## Probar
 
-> Supabase da permisos por defecto a `anon`/`authenticated` en tablas nuevas. La migración 06 los revoca y activa RLS; **toda migración futura debe repetir** `enable row level security` y los `revoke` para sus tablas.
+```bash
+PG_BIN="/c/Program Files/PostgreSQL/18/bin" bash database/scripts/probar_local.sh   # con PostgreSQL instalado
+bash database/scripts/probar_local.sh --docker                                      # sin PostgreSQL: en postgres:18-alpine
+```
+
+Última ejecución (2026-11-04, `--docker`, PostgreSQL 18): 36 migraciones aplicadas con `instalar_local.sh`, segunda instalación sin cambios, seeds idempotentes, **164 verificaciones OK**, 40 consecutivos concurrentes sin repetir ni saltar y permisos de `sgd_backend` correctos (lee y ejecuta; no borra).
 
 ## Usuarios: sin login propio (D-13)
 
@@ -57,7 +64,7 @@ update usuario set perfil = 'administrador' where email = '<correo institucional
 
 ## Convenciones para el backend y n8n
 
-- Al iniciar cada transacción: `select set_config('app.usuario_id', '<usuario.id>', true);` — así la auditoría y los campos `*_por` registran quién hizo la acción. Sin esto se atribuye al sistema.
+- **Quién actúa**: las funciones `fn_*_usuario(p_usuario_id, …)` llaman a `fn_set_usuario_actual` dentro de su propia transacción; así la auditoría y los campos `*_por` registran a la persona. Una escritura directa (`db.from(…).insert/update`) se atribuye al sistema.
 - **Autorización** antes de cada acción: `fn_tiene_permiso(usuario, 'funcion')` + `fn_puede_ver_dependencia(...)` / `fn_puede_ver_historia(...)`. Matriz en la tabla `permiso_perfil`.
 - **Consultas, descargas e intentos denegados**: `fn_auditar('consultar'|'descargar'|'denegado', recurso, id, detalle, resultado)`. Los INSERT/UPDATE se auditan solos.
 - **Archivos** (D-02): guardar en `<RAIZ_ARCHIVOS>/...` con nombre `<uuid>.<ext>`, insertar en `archivo` y referenciar con `archivo_id`. Servir siempre por id, nunca por ruta.
