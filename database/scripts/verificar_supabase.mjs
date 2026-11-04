@@ -19,9 +19,9 @@ const env = Object.fromEntries(
     .filter(l => /^[A-Z0-9_]+=/.test(l))
     .map(l => [l.split("=")[0], l.slice(l.indexOf("=") + 1).trim().replace(/^"|"$/g, "")]),
 );
-const URL = env.NEXT_PUBLIC_SUPABASE_URL;
+const URL = env.SUPABASE_URL ?? env.NEXT_PUBLIC_SUPABASE_URL;   // SUPABASE_URL: base local (D-29)
 const KEY = env.SUPABASE_SERVICE_ROLE_KEY;
-if (!URL || !KEY) { console.error("Faltan NEXT_PUBLIC_SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY en .env.local"); process.exit(1); }
+if (!URL || !KEY) { console.error("Faltan SUPABASE_URL (o NEXT_PUBLIC_SUPABASE_URL) o SUPABASE_SERVICE_ROLE_KEY en .env.local"); process.exit(1); }
 
 // Una función o tabla representativa de cada migración.
 const MIGRACIONES = [
@@ -41,6 +41,7 @@ const MIGRACIONES = [
   ["20261017000000_catalogos_parametros_auditoria.sql", ["rpc:fn_catalogo_guardar", "rpc:fn_catalogo_importar", "rpc:fn_parametro_guardar", "rpc:fn_plantilla_guardar", "rpc:fn_auditoria_consultar"]],
   ["20261019000000_historico_comunicaciones.sql",   ["rpc:fn_historico_importar", "rpc:fn_historico_calendario", "rpc:fn_historico_mes"]],
   ["20261020000000_archivo_busqueda.sql",          ["rpc:fn_alcance_consulta", "rpc:fn_archivo_arbol", "rpc:fn_archivo_buscar"]],
+  ["20261031000000_transferencias_sin_supabase.sql", ["rpc:registrar_transferencia"]],
   ["20261012000000_docx_formato_permitido.sql",     ["tabla:parametro"]],
 ];
 
@@ -77,7 +78,11 @@ const params = await sb.from("parametro").select("clave, descripcion");
 const conCodigos = (params.data ?? []).filter(x => /(RNF|RF|RN)-AC|P-\d+|mockup|tentativo/.test(x.descripcion ?? "")).map(x => x.clave);
 console.log(`  descripciones  : ${params.error ? "error: " + params.error.message : conCodigos.length ? `con códigos de requisitos (${conCodigos.join(", ")})` : "en lenguaje de usuario"}`);
 if (conCodigos.length) faltan.push("20261018000000_parametros_descripcion_usuario.sql");
-console.log(`permiso_perfil   : ${await conteo("permiso_perfil")} (esperado 30)`);
+console.log(`permiso_perfil   : ${await conteo("permiso_perfil")} (esperado 31)`);
+// Migración de solo datos (D-28): se revisa por contenido.
+const audAC = await sb.from("permiso_perfil").select("perfil").eq("perfil", "archivo_central").eq("funcion", "auditoria.consultar");
+console.log(`  auditoría AC   : ${audAC.error ? "error: " + audAC.error.message : audAC.data?.length ? "Archivo Central la consulta" : "FALTA"}`);
+if (!audAC.error && !audAC.data?.length) faltan.push("20261030000000_auditoria_archivo_central.sql");
 console.log(`tipo_documental  : ${await conteo("tipo_documental")} (esperado ≥ 11)`);
 console.log(`dependencia      : ${await conteo("dependencia")}`);
 
