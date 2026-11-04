@@ -115,7 +115,7 @@ El nombre del volumen lleva delante el nombre de la carpeta (`despliegue_`); se 
 
 ## Pendiente antes de salir a producción
 
-- **Rutas de transferencias sin autenticación:** `GET`/`POST /api/transferencias` y `GET /api/transferencias/{id}` no exigen sesión. Cualquiera con acceso a la red podría ver y crear transferencias. Hay que corregirlo antes de publicar.
+- **Rutas de transferencias:** ~~sin autenticación~~ corregido (SGD-095): exigen sesión y el permiso `cargas.transferencia`; Dependencia solo ve y registra las suyas.
 - **`nivel_formacion` sin RLS** (migración 27). Con la base local el riesgo es menor porque PostgREST no se publica, pero en Supabase la tabla queda abierta a la clave pública.
 - **`registrar_transferencia` reconstruida** (migración 31): existía solo en Supabase. Conviene exportar la original con `select pg_get_functiondef('registrar_transferencia'::regproc);` y reemplazarla.
 - **Prueba desactualizada** en `pruebas_reglas.sql` ("Registro Académico no ve historias de graduados") desde D-27.

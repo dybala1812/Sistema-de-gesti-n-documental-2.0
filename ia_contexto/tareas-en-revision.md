@@ -66,4 +66,11 @@
   Tipo: chore
   Spec: despliegue/README.md
   Evidencia: D-29 y D-30; despliegue/docker-compose.yml (PostgreSQL 18 + PostgREST + Nginx + backend); database/scripts/instalar_local.sh (34 migraciones en PostgreSQL 18 temporal, segunda corrida sin cambios; service_role lee y registra, anon sin acceso); migración 31 (I-20) con pruebas; Dockerfile standalone probado con node server.js (/api/salud 200, sin token 401); scripts/armar_rama_despliegue.sh; ruta de Archivo Central solo para rol area; npm test 21/21, tsc backend 0, tsc frontend 28 (línea base), vite build limpio.
-  Pendiente: probar docker compose en un servidor (Docker estaba apagado); corregir rutas de transferencias sin autenticación (código de un compañero); nivel_formacion sin RLS (migración 27); prueba desactualizada de historias (D-27); exportar la registrar_transferencia original; revisión humana
+  Pendiente: probar docker compose en un servidor (Docker estaba apagado); nivel_formacion sin RLS (migración 27); prueba desactualizada de historias (D-27); exportar la registrar_transferencia original; revisión humana
+
+- [ ] SGD-095: [BUG] Rutas de transferencias sin autenticación: GET/POST /api/transferencias y GET /api/transferencias/{id}
+  Tipo: bug
+  Prioridad: alta (bloqueaba el despliegue)
+  Requisito: RF-AC-009, RF-AC-023, regla 10 (permisos validados en el backend)
+  Evidencia: las tres rutas exigen sesión (obtenerUsuarioAutenticado) y el permiso cargas.transferencia con autorizar() (fn_autorizar, migración 32: audita el intento denegado con usuario y acción; sin la migración revisa el permiso sin auditar); Dependencia solo lista y abre las suyas (otra dependencia → 404) y solo registra para la suya (403); registrar_transferencia recibe el usuario que registra (antes null). Pruebas: probar_local.sh 165 OK (2 nuevas de fn_autorizar); en vivo contra el backend de desarrollo: sin token 401 en las tres; con el usuario de desarrollo (con permiso) lista y detalle 200, POST vacío 400 de validación; tsc backend 0, lint 0 errores.
+  Pendiente: aplicar la migración 32 en Supabase; revisión humana. Código de dybala1812, corregido a pedido del usuario.
