@@ -1,4 +1,6 @@
-# Login temporal de pruebas por perfil — ⚠️ BORRAR ANTES DEL DESPLIEGUE
+# Login temporal de pruebas por perfil — RETIRADO (SGD-091, 2026-11-04)
+
+> Se quitó del backend y del frontend en la rama `feature/SGD-094-preparar-despliegue`. Este archivo queda como registro. Para volver a probar por perfil, recuperarlo desde el historial de Git (commit anterior a SGD-094).
 
 Creado el 2026-10-28 para probar los permisos de cada perfil del SGD sin pasar por el login de NOVA.
 En producción el módulo usa **solo** el token de NOVA (regla 10 de CLAUDE.md). Tarea de retiro: **SGD-091**.

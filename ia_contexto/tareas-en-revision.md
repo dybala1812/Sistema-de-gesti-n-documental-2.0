@@ -45,3 +45,25 @@
   Depende de: SGD-030
   Evidencia: migración 20 (20261020000000_archivo_busqueda.sql): fn_archivo_arbol (árbol Dependencia → Año → Asunto con contadores, incluye dependencias sin documentos), fn_archivo_buscar (documentos clasificados + comunicaciones, 20 por página, filtros año, mes, día, dependencia, tipo, asunto, consecutivo, persona, TRD, texto; comodines del usuario escapados), fn_alcance_consulta (permiso auditado y límite por dependencia); índices trigram de destinatario. Backend: GET /api/archivo/arbol y /api/archivo/buscar; "385 del 29 de febrero" se interpreta en lib/consecutivoTexto.ts (7 pruebas unitarias). /api/clasificados y /api/documentos ahora exigen documentos.consultar o documentos.clasificar y limitan Dependencia a lo suyo (antes cualquier usuario veía todo). Frontend: Archivo con datos reales (antes datos de ejemplo escritos en el código), paginación y visor; Buscar habilitado en el menú, abre documentos en el visor y comunicaciones en su detalle. Pruebas: 16 nuevas en pruebas_reglas.sql (probar_local.sh todo correcto), npm test 21/21, tsc backend 0, tsc frontend 28 (línea base); en vivo con el login temporal: Registro Académico 403 en Clasificados, Dependencia 403 en Por clasificar, Archivo Central 200; Archivo y Buscar muestran el aviso 1002 mientras falte la migración.
   Pendiente: aplicar la migración 20 en Supabase y probar árbol y búsqueda con datos reales; P-09 (qué perfiles descargan) sigue abierta: la descarga no cambia; revisión humana
+
+- [ ] SGD-091: Quitar el login temporal de pruebas por perfil (/login-temporal) y dejar solo el token de NOVA
+  Tipo: chore
+  Prioridad: alta (bloquea el despliegue)
+  Etiquetas: seguridad, despliegue
+  Skills: seguridad, desarrollo
+  Requisito: regla 10 de CLAUDE.md (sin login propio), D-13
+  Pasos: seguir la lista de ia_contexto/login-temporal.md (todo está marcado con ⚠️ TEMPORAL), quitar las variables de los .env y comprobar que el build de producción no contiene login-temporal ni sgdtmp.
+  Nota: rotar N8N_SERVICE_TOKEN (también en la credencial de n8n): estuvo en un build local del frontend antes del 2026-10-28.
+  Evidencia: backend sin lib/loginTemporal.ts ni /api/login-temporal (404 en el build de producción); frontend sin lib/loginTemporal.ts, pages/login-temporal, LOGIN_TEMPORAL ni el botón Login 2; AuthContext.tsx e InstitutionalNavbar.tsx vuelven a su versión de NOVA; la app móvil usa la sesión de NOVA. Build de producción del frontend sin login-temporal, sgdtmp ni tokens.
+  Pendiente: revisión humana; inactivar con motivo los usuarios @prueba.sgd.test en la base de producción si se migran datos; rotar N8N_SERVICE_TOKEN
+
+- [ ] SGD-093: Auditoría para Archivo Central (D-28), Comunicaciones oculta en el menú y acceso desde el celular
+  Tipo: feature
+  Evidencia: migración 30 (permiso auditoria.consultar para archivo_central), seed, prueba y verificar_supabase; flag oculto en Bandeja y Correos sin asociar; Vite con --host en .claude/launch.json (el backend ya aceptaba la red local en desarrollo). Pruebas D-28 en pruebas_reglas.sql; vista de celular por 192.168.1.2 revisada en el navegador.
+  Pendiente: aplicar la migración 30 en Supabase; revisión humana
+
+- [ ] SGD-094: Preparar el despliegue: base de datos local, Docker, rama solo backend, acceso por rol área
+  Tipo: chore
+  Spec: despliegue/README.md
+  Evidencia: D-29 y D-30; despliegue/docker-compose.yml (PostgreSQL 18 + PostgREST + Nginx + backend); database/scripts/instalar_local.sh (34 migraciones en PostgreSQL 18 temporal, segunda corrida sin cambios; service_role lee y registra, anon sin acceso); migración 31 (I-20) con pruebas; Dockerfile standalone probado con node server.js (/api/salud 200, sin token 401); scripts/armar_rama_despliegue.sh; ruta de Archivo Central solo para rol area; npm test 21/21, tsc backend 0, tsc frontend 28 (línea base), vite build limpio.
+  Pendiente: probar docker compose en un servidor (Docker estaba apagado); corregir rutas de transferencias sin autenticación (código de un compañero); nivel_formacion sin RLS (migración 27); prueba desactualizada de historias (D-27); exportar la registrar_transferencia original; revisión humana
