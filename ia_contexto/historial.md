@@ -10,6 +10,12 @@ Seguridad: secretos, validaciones, permisos revisados
 Commit: hash o "ninguno"
 -->
 
+## 2026-11-04 — SGD-096 y SGD-097 en revisión | NOVA lista para producción y fotos en la carga masiva del celular
+Cambio: SGD-096 en NOVA_FT (VITE_SGD_API_URL en el Dockerfile, blob: en frame-src), fusionado en main. SGD-097: la carga masiva de /movil acepta cámara y galería y pide los datos del estudiante cuando el nombre del archivo no los trae.
+Tests: tsc frontend 28 (línea base); vite build limpio; vista de celular en el navegador; prueba del usuario en su teléfono.
+Nota: para probar /movil en un teléfono sin el backend de NOVA se usó un modo pruebas sin login solo local (no se subió; quitarlo de la máquina de desarrollo al terminar).
+Commit: NOVA_FT 6619270 (SGD-096), 4cc07d0 (SGD-097).
+
 ## 2026-11-04 — SGD-095 en revisión | Transferencias exigen sesión y permiso
 Cambio: GET/POST /api/transferencias y GET /api/transferencias/{id} (código de dybala1812, corregido a pedido del usuario) exigen sesión y cargas.transferencia; Dependencia limitada a su dependencia; registrar_transferencia recibe el usuario. Nueva fn_autorizar (migración 32) y helper autorizar() en lib/catalogos.ts para auditar intentos denegados con usuario y acción.
 Tests: probar_local.sh 165 OK; en vivo sin token 401, con permiso 200 y POST vacío 400; tsc backend 0; lint 0 errores.
