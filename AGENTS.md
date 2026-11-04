@@ -4,12 +4,18 @@ Universidad Autónoma (Uniautónoma del Cauca) · práctica profesional. Reempla
 
 ## Dónde está todo
 
+**`main` solo trae lo que se despliega:** `backned_sistema_gestion_documental/` (backend Next.js, solo `app/api`; habla con PostgreSQL directo vía `lib/db.ts`), `database/` (**PostgreSQL 18 propio, sin Supabase**, D-31: migraciones, seeds, pruebas con `database/scripts/probar_local.sh`) y `despliegue/` (Docker Compose, respaldos). Guía: `README_DEPLOY.md`.
+
+Lo de trabajo sigue en la rama **`master`** del repositorio (no está en `main`): `ia_contexto/`, las skills (`.claude/skills/`, `.agents/skills/`), `flujos n8n/` y `scripts/`. El frontend es el repo aparte **`DavidM3-M/NOVA_FT`** (rama `desarrollo-archivo-central`), enlazado como submódulo en `master`.
+
+En `master`:
+
 - **Requisitos (fuente que manda):** `ia_contexto/fuentes/F-02_Archivo_Central_v1.1.docx` (texto: `.md` al lado).
 - **Spec operativa:** `ia_contexto/spec/` → `product.md`, `requirements.md` (RF-AC-001…024 + RNF), `business-rules.md` (RN-AC-01…14), `architecture.md`, `decisiones.md` (decisiones, **preguntas abiertas**, inconsistencias), `trazabilidad.md`, `historias/`.
 - **Mockups (cómo se ve la app):** `ia_contexto/diseno/mockups_archivo_central_y_movil.html` (abrir en navegador; escritorio + móvil). Descripción por pantalla y diferencias con el F-02: `ia_contexto/diseno/README.md`. Al construir una pantalla, seguir su mockup salvo donde contradiga el F-02.
 - **Tablero:** `ia_contexto/tareas-*.md` + `historial.md` (skill `project-manager`). Prefijo de tareas `SGD-NNN`.
 - **Cómo programar:** `.claude/skills/` (espejo `.agents/skills/`; mantener ambas sincronizadas): `desarrollo`, `seguridad`, `testing`, `git`, `frontend/`.
-- Frontend: `NOVA_FT/` (React + TS + Vite + Tailwind v4 + shadcn; repo Git anidado). Backend: `backned_sistema_gestion_documental/` (Next.js, solo `app/api`; habla con PostgreSQL directo vía `lib/db.ts`). BD: **PostgreSQL 18 propio, sin Supabase** (D-31) en `database/` (migraciones, seeds, pruebas: `database/scripts/probar_local.sh`). Despliegue: `README_DEPLOY.md`. Automatización: n8n (F1–F11).
+- Frontend: repo `NOVA_FT` (React + TS + Vite + Tailwind v4 + shadcn). Automatización: n8n (F1–F11), exportaciones en `flujos n8n/`.
 
 ## Regla de trabajo: no tocar lo ajeno
 
@@ -35,17 +41,17 @@ No se modifica nada que no nos pertenezca o que no hayamos hecho: código origin
 10. **Sin login propio**: el usuario viene autenticado de NOVA; el backend valida el token con `GET /api/users/perfil/` de NOVA y sincroniza `usuario` con `fn_sincronizar_usuario_nova`. Permisos por **perfil y dependencia** validados en backend/RLS. Perfiles fijos: Archivo Central, Dependencia, Registro Académico, Secretaría General, Administrador.
 11. Datos personales (Ley 1581): nunca en logs/URLs; datos de prueba ficticios; archivos nunca públicos.
 12. Procesos masivos y flujos n8n **idempotentes** (Message-ID, hash) y tolerantes a fallos por elemento.
-13. **n8n solo maneja la Bandeja de comunicaciones** (F1 correo entrante, F2 remitir, F3 responder, F4 recordatorios, F5 envío, F6 errores) y **habla solo con el backend**: 19 APIs `POST /api/n8n/*` + `POST/GET /api/archivos` (D-19, contrato `database/n8n/APIs_backend_n8n.md`); cada API llama a su función SQL `n8n_*` (migración 09). Cargas, transferencias/FUID, historias, histórico e IA los hace el backend. Contrato: `backned_sistema_gestion_documental/n8n/TABLAS_N8N.md`.
+13. **n8n solo maneja la Bandeja de comunicaciones** (F1 correo entrante, F2 remitir, F3 responder, F4 recordatorios, F5 envío, F6 errores) y **habla solo con el backend**: 19 APIs `POST /api/n8n/*` + `POST/GET /api/archivos` (D-19, contrato `database/n8n/APIs_backend_n8n.md`); cada API llama a su función SQL `n8n_*` (migración 09). Cargas, transferencias/FUID, historias, histórico e IA los hace el backend. Contrato: `database/n8n/TABLAS_N8N.md`.
 
 Normativa: Ley 594/2000, Decreto 1080/2015, Ley 1581/2012, Decreto 1377/2013. Calidad: ISO/IEC 25010. Cobertura ≥ 60 % en consecutivos, estados y permisos.
 
 ## Frontend dentro de NOVA (D-16, D-17)
 
-El módulo vive en el **Panel de Área de NOVA** (`NOVA_FT/src/app/pages/tickets/AreaDashboard.tsx`) como un módulo más de la barra lateral; cada módulo es un componente propio (ej. `pages/comunicaciones/ComunicacionesArea.tsx`, mismo patrón que `pages/inventario/InventarioArea.tsx`). Dentro de NOVA se usan **los colores de NOVA** (Tailwind gris/blanco, navy `#1e3a5f`, naranja de acento); los mockups solo dan la distribución. La paleta institucional de abajo aplica a piezas fuera de NOVA (documentos, plantillas, apps independientes).
+El módulo vive en el **Panel de Área de NOVA** (repo NOVA_FT: `src/app/pages/tickets/AreaDashboard.tsx`) como un módulo más de la barra lateral; cada módulo es un componente propio (ej. `pages/comunicaciones/ComunicacionesArea.tsx`, mismo patrón que `pages/inventario/InventarioArea.tsx`). Dentro de NOVA se usan **los colores de NOVA** (Tailwind gris/blanco, navy `#1e3a5f`, naranja de acento); los mockups solo dan la distribución. La paleta institucional de abajo aplica a piezas fuera de NOVA (documentos, plantillas, apps independientes).
 
 ## Paleta institucional
 
-Usar SIEMPRE estos tokens antes de introducir cualquier color nuevo. Detalle, contraste y mapeo al tema: `.claude/skills/frontend/color-palette.md`.
+Usar SIEMPRE estos tokens antes de introducir cualquier color nuevo. Detalle, contraste y mapeo al tema: `.claude/skills/frontend/color-palette.md` (rama `master`).
 
 | Token | Valor | Uso |
 |---|---|---|

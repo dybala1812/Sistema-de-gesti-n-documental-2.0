@@ -2,7 +2,12 @@
 
 Módulo de **Archivo Central** de la Universidad Autónoma del Cauca (Uniautónoma), construido como práctica profesional. Reemplaza los Excel por año, los PDF mensuales por oficina y el circuito manual de correos por un sistema único que **registra, custodia y consulta** lo que llega al Archivo Central. Funciona **dentro de NOVA**, el portal institucional: el usuario entra con su cuenta de NOVA y el módulo aparece en su Panel de Área.
 
-Requisitos (fuente que manda): `ia_contexto/fuentes/F-02_Archivo_Central_v1.1.docx`. Spec operativa: `ia_contexto/spec/`. Despliegue en producción: **[README_DEPLOY.md](README_DEPLOY.md)**.
+**Esta rama (`main`) trae solo lo que se despliega:** backend, base de datos y configuración de despliegue. Despliegue en producción: **[README_DEPLOY.md](README_DEPLOY.md)**.
+
+Fuera de `main`:
+
+- **Frontend:** repositorio [DavidM3-M/NOVA_FT](https://github.com/DavidM3-M/NOVA_FT), rama `desarrollo-archivo-central`.
+- **Rama `master` de este repositorio:** requisitos y spec (`ia_contexto/`, con el F-02 firmado como fuente que manda), skills (`.claude/`, `.agents/`), exportaciones de los flujos (`flujos n8n/`) y `scripts/`, además del frontend enlazado como submódulo.
 
 ## Objetivo y funcionalidades
 
@@ -24,7 +29,7 @@ Un repositorio clasificado (**Dependencia → Año → Asunto**, cada asunto con
         │  (sesión de NOVA: token JWT)
         ▼
  ┌────────────────────────────┐        valida el token        ┌──────────────────────┐
- │ Frontend NOVA (NOVA_FT/)   │──────────────────────────────►│ Backend de NOVA      │
+ │ Frontend NOVA (repo aparte)│──────────────────────────────►│ Backend de NOVA      │
  │ React + Vite · módulo en   │                                │ GET /api/users/perfil│
  │ el Panel de Área           │                                └──────────▲───────────┘
  └─────────────┬──────────────┘                                           │
@@ -45,15 +50,15 @@ Un repositorio clasificado (**Dependencia → Año → Asunto**, cada asunto con
 
 | Capa | Tecnología | Dónde |
 | --- | --- | --- |
-| Frontend | React 18 + TypeScript + Vite 6 + Tailwind v4 + shadcn/ui, dentro de NOVA | `NOVA_FT/` (submódulo Git, repo propio) |
+| Frontend | React 18 + TypeScript + Vite 6 + Tailwind v4 + shadcn/ui, dentro de NOVA | Repo `DavidM3-M/NOVA_FT` (fuera de `main`) |
 | Backend | Next.js 16 (solo rutas `app/api`), TypeScript 5, driver `pg` | `backned_sistema_gestion_documental/` |
 | Base de datos | **PostgreSQL 18 propio** (sin Supabase, D-31): migraciones SQL, funciones `fn_*`/`n8n_*`, triggers, RLS | `database/` |
-| Automatización | n8n (solo la Bandeja de comunicaciones; habla solo con el backend) | `flujos n8n/` (exportaciones), contrato en `database/n8n/` |
+| Automatización | n8n (solo la Bandeja de comunicaciones; habla solo con el backend) | Contrato en `database/n8n/`; exportaciones en `flujos n8n/` de la rama `master` |
 | Despliegue | Docker + Docker Compose | `despliegue/`, `backned_sistema_gestion_documental/Dockerfile` |
 
 ### Cómo funciona cada parte
 
-- **Frontend.** El módulo es un componente más del Panel de Área de NOVA (`NOVA_FT/src/app/pages/archivo-central/`, `…/comunicaciones/`). Reutiliza el token de la sesión de NOVA y llama al backend del SGD (`NOVA_FT/src/app/lib/sgdApi.ts`, base `VITE_SGD_API_URL`). Solo entra el rol *área* de NOVA (D-30); lo que puede hacer cada persona lo decide su perfil del SGD.
+- **Frontend.** El módulo es un componente más del Panel de Área de NOVA (repo NOVA_FT: `src/app/pages/archivo-central/`, `…/comunicaciones/`). Reutiliza el token de la sesión de NOVA y llama al backend del SGD (`src/app/lib/sgdApi.ts`, base `VITE_SGD_API_URL`). Solo entra el rol *área* de NOVA (D-30); lo que puede hacer cada persona lo decide su perfil del SGD.
 - **Backend.** Valida cada token contra NOVA, sincroniza a la persona en la tabla `usuario` y revisa su perfil. Expone la API REST del módulo y las APIs que usa n8n. Guarda los archivos en carpetas (`RAIZ_ARCHIVOS`) y su referencia (id, ruta, hash) en la tabla `archivo`; nunca binarios en la base. Se conecta a PostgreSQL directo (`lib/db.ts`) con el rol `sgd_backend`. Detalle: [backned_sistema_gestion_documental/README.md](backned_sistema_gestion_documental/README.md).
 - **Base de datos.** Concentra las reglas de negocio: consecutivos atómicos por tipo y año, estados de las comunicaciones, permisos por perfil (`permiso_perfil`), auditoría inmutable, bloqueo de borrado y RLS en todas las tablas. Se instala y actualiza con `database/scripts/instalar_local.sh`, que lleva la cuenta de las migraciones aplicadas. Detalle: [database/README.md](database/README.md).
 
@@ -63,7 +68,6 @@ Un repositorio clasificado (**Dependencia → Año → Asunto**, cada asunto con
 .
 ├── README.md / README_DEPLOY.md       # este archivo y la guía de producción
 ├── CLAUDE.md / AGENTS.md              # reglas del proyecto para el equipo y los asistentes
-├── NOVA_FT/                           # frontend de NOVA con el módulo (submódulo, rama desarrollo-archivo-central)
 ├── backned_sistema_gestion_documental/
 │   ├── app/api/<recurso>/route.ts     # rutas REST; app/api/n8n/ = APIs que llama n8n; app/api/salud = prueba de vida
 │   ├── lib/                           # db (PostgreSQL), auth (NOVA), errors, catálogos, comunicaciones, archivos, n8n…
@@ -76,19 +80,16 @@ Un repositorio clasificado (**Dependencia → Año → Asunto**, cada asunto con
 │   ├── tests/pruebas_reglas.sql       # pruebas de reglas de negocio
 │   ├── scripts/                       # instalar_local.sh, probar_local.sh, armar_instalacion.sh
 │   └── n8n/                           # contrato de las APIs para n8n
-├── despliegue/
-│   ├── docker-compose.yml             # producción: PostgreSQL + migraciones + backend
-│   ├── docker-compose.dev.yml         # desarrollo: solo PostgreSQL en localhost
-│   ├── .env.ejemplo                   # variables de producción (sin valores)
-│   └── respaldar.sh                   # respaldo de base y archivos
-├── flujos n8n/                        # flujos de n8n exportados (JSON)
-├── scripts/armar_rama_despliegue.sh   # arma la rama despliegue-backend (sin NOVA ni ia_contexto)
-└── ia_contexto/                       # requisitos, spec, decisiones (D-xx), tablero (SGD-NNN) e historial
+└── despliegue/
+    ├── docker-compose.yml             # producción: PostgreSQL + migraciones + backend
+    ├── docker-compose.dev.yml         # desarrollo: solo PostgreSQL en localhost
+    ├── .env.ejemplo                   # variables de producción (sin valores)
+    └── respaldar.sh                   # respaldo de base y archivos
 ```
 
 ## Requisitos previos (desarrollo)
 
-- **Git** (el frontend es un submódulo).
+- **Git**.
 - **Node.js 24** y npm.
 - **Docker Desktop** (o Docker Engine + Compose v2) para la base de datos. Alternativa: PostgreSQL 18 instalado.
 - Acceso a una instancia de **NOVA** (backend) para iniciar sesión; sin ella, el backend acepta un token de desarrollo (`SGD_DEV_TOKEN`, solo con `next dev`).
@@ -96,7 +97,7 @@ Un repositorio clasificado (**Dependencia → Año → Asunto**, cada asunto con
 ## Instalación local
 
 ```bash
-git clone --recurse-submodules https://github.com/dybala1812/Sistema-de-gesti-n-documental-2.0.git sgd
+git clone https://github.com/dybala1812/Sistema-de-gesti-n-documental-2.0.git sgd     # rama main
 cd sgd
 ```
 
@@ -120,9 +121,10 @@ npm run dev
 curl http://localhost:3000/api/salud        # {"ok":true,"bd":true}
 ```
 
-**3. Frontend** (`http://localhost:5173`):
+**3. Frontend** (`http://localhost:5173`, repo aparte):
 
 ```bash
+git clone -b desarrollo-archivo-central https://github.com/DavidM3-M/NOVA_FT.git
 cd NOVA_FT
 cp .env.example .env                        # VITE_SGD_API_URL=http://localhost:3000/api y la URL del backend de NOVA (VITE_API_URL)
 npm install
@@ -147,4 +149,4 @@ npx tsc --noEmit && npm run lint && npm run build
 
 ## Forma de trabajo
 
-Ramas, tablero (`ia_contexto/tareas-*.md`, tareas `SGD-NNN`) y reglas de negocio que nunca se rompen: ver [CLAUDE.md](CLAUDE.md). Las decisiones vinculantes están en `ia_contexto/spec/decisiones.md`. Normativa: Ley 594/2000, Decreto 1080/2015, Ley 1581/2012 (datos personales: nunca en logs, URLs ni datos de prueba reales) y Decreto 1377/2013.
+Reglas de negocio que nunca se rompen: ver [CLAUDE.md](CLAUDE.md). El tablero (tareas `SGD-NNN`) y las decisiones vinculantes (`ia_contexto/spec/decisiones.md`) están en la rama `master`. Normativa: Ley 594/2000, Decreto 1080/2015, Ley 1581/2012 (datos personales: nunca en logs, URLs ni datos de prueba reales) y Decreto 1377/2013.

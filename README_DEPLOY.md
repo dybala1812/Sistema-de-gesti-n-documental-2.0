@@ -47,13 +47,13 @@ Volúmenes: datos_postgres (la base) · archivos_sgd (los documentos escaneados)
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER      # cerrar y abrir sesión
 
-# Código: solo backend, base y despliegue (rama generada, sin NOVA_FT ni ia_contexto)
+# Código: la rama main trae solo backend, base y despliegue
 sudo mkdir -p /opt/sgd && sudo chown $USER /opt/sgd
-git clone -b despliegue-backend https://github.com/dybala1812/Sistema-de-gesti-n-documental-2.0.git /opt/sgd
+git clone -b main https://github.com/dybala1812/Sistema-de-gesti-n-documental-2.0.git /opt/sgd
 cd /opt/sgd/despliegue
 ```
 
-`despliegue-backend` se genera desde la rama principal con `scripts/armar_rama_despliegue.sh` (no se edita a mano). También se puede clonar la rama principal completa; los comandos son los mismos.
+`main` no incluye el frontend, la spec (`ia_contexto/`) ni las skills: esos quedan en la rama `master` y en el repo de NOVA.
 
 ## 4. Variables de entorno
 
@@ -168,10 +168,10 @@ Comandos útiles: `docker compose logs -f backend`, `docker compose restart back
 
 ## 8. Frontend (dentro de NOVA)
 
-El módulo se publica con el frontend de NOVA (`NOVA_FT/`, rama `desarrollo-archivo-central` → `main` de NOVA, que lleva su equipo):
+El módulo se publica con el frontend de NOVA (repo `DavidM3-M/NOVA_FT`, rama `desarrollo-archivo-central` → `main` de NOVA, que lleva su equipo):
 
 - Variable de build: `VITE_SGD_API_URL=https://sgd-api.<dominio>/api` (con `/api` al final). El `Dockerfile` de NOVA ya la recibe como `ARG`.
-- `NOVA_FT/nginx.conf` ya permite `blob:` en `frame-src` (visor de PDF).
+- El `nginx.conf` de NOVA ya permite `blob:` en `frame-src` (visor de PDF).
 - No lleva tokens ni claves del SGD: nada sensible va en variables `VITE_*`.
 - `ALLOWED_ORIGINS` del backend debe ser exactamente el origen público del frontend.
 
@@ -253,7 +253,7 @@ docker image prune -f                  # limpia imágenes viejas
 - **Espacio en disco:** `docker system df` y `du -sh respaldos/`. Vigilar el crecimiento del volumen de archivos.
 - **Mantenimiento de la base:** el autovacuum de PostgreSQL está activo; tras cargas masivas grandes, `docker compose exec db psql -U postgres -d sgd -c "vacuum analyze"`.
 - **Logs:** `docker compose logs --since 24h backend`. Para que no crezcan sin límite, configurar la rotación de Docker en `/etc/docker/daemon.json` (`"log-opts": {"max-size": "20m", "max-file": "5"}`).
-- **Cambios en el código:** se hacen en la rama principal; después `./scripts/armar_rama_despliegue.sh` y `git push origin despliegue-backend`.
+- **Cambios en el código:** se integran en `main` y en el servidor se aplica con `git pull` (arriba).
 
 ## 13. Problemas frecuentes
 

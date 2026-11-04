@@ -1,6 +1,6 @@
 # Despliegue — SGD · Módulo Archivo Central
 
-La guía completa está en [README_DEPLOY.md](../README_DEPLOY.md) (en la raíz del repositorio y de la rama `despliegue-backend`).
+La guía completa está en [README_DEPLOY.md](../README_DEPLOY.md) (en la raíz de la rama `main`).
 
 | Archivo | Para qué |
 | --- | --- |
