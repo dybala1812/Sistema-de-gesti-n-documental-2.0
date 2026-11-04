@@ -828,6 +828,23 @@ begin
     v_base || jsonb_build_object('carpetas', jsonb_build_array(v_fila || jsonb_build_object('fechaFinal', v_anio || '-01-01')))), 'anterior a la inicial');
 end $$;
 
+-- ── fn_autorizar: permiso y auditoría del intento denegado (migración 32) ──────
+do $$
+declare
+  v_ac bigint := fn_usuario_actual();
+  v_ra bigint := (select id from usuario where perfil = 'registro_academico' order by id limit 1);
+  v_puede boolean;
+begin
+  perform pg_temp.ok(fn_autorizar(v_ac, 'cargas.transferencia', 'crear', 'transferencia'),
+    'fn_autorizar: Archivo Central puede registrar transferencias');
+  v_puede := fn_autorizar(v_ra, 'cargas.transferencia', 'crear', 'transferencia');   -- aparte: el exists debe ver lo que escribió
+  perform pg_temp.ok(not v_puede
+                     and exists (select 1 from auditoria where usuario_id = v_ra and accion = 'crear'
+                                 and recurso_tipo = 'transferencia' and resultado = 'denegado'),
+    'fn_autorizar: Registro Académico no registra transferencias y el intento queda auditado con su usuario');
+  perform fn_set_usuario_actual(v_ac);   -- restaura el usuario de la sesión de pruebas
+end $$;
+
 -- ── IA ───────────────────────────────────────────────────────────────────────
 do $$
 begin
