@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase"; // AJUSTA: nombre/ruta real de tu cliente de Supabase
-import { errorFormulario, errorSistema } from "@/lib/errors";
-// import { requireUser } from "@/lib/auth"; // AJUSTA: la validación que usan las rutas de comunicaciones
+import { errorFormulario, errorSistema, forbidden } from "@/lib/errors";
+import { obtenerUsuarioAutenticado } from "@/lib/auth";
+import { autorizar } from "@/lib/catalogos";
 
 const TIPOS = ["fisica", "digital", "ambas"] as const;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -24,7 +25,11 @@ const mapEstado = (s: string): "Borrador" | "En revisión" | "Recibida" => {
 /** GET /api/transferencias?anio=2024 → lista para la pantalla "Transferencias documentales" */
 export async function GET(req: Request) {
   try {
-    // const user = await requireUser(req);
+    // Sesión y permiso cargas.transferencia (Archivo Central y Dependencia); Dependencia ve solo las suyas.
+    const usuario = await obtenerUsuarioAutenticado(req);
+    if (!(await autorizar(usuario.id, "cargas.transferencia", "consultar", "transferencia"))) {
+      return forbidden("No tiene permiso para esta acción: requiere el permiso cargas.transferencia");
+    }
     const anio = new URL(req.url).searchParams.get("anio");
     let q = supabase
       .from("transferencia")
@@ -32,6 +37,7 @@ export async function GET(req: Request) {
       .is("anulado_en", null)
       .order("registrado_en", { ascending: true });
     if (anio) q = q.eq("anio", Number(anio));
+    if (usuario.perfil === "dependencia") q = q.eq("dependencia_id", usuario.dependencia_id ?? -1);
 
     const { data, error } = await q;
     if (error) throw error;
@@ -68,6 +74,7 @@ export async function GET(req: Request) {
       })
     );
   } catch (e) {
+    if (e instanceof Response) return e; // sin sesión o token no válido
     console.error("GET /api/transferencias", e);
     return errorSistema("INTERNO", 500, { detalle: "no se pudieron cargar las transferencias" });
   }
@@ -76,7 +83,10 @@ export async function GET(req: Request) {
 /** POST /api/transferencias → crea y registra la transferencia con su inventario (todo en una transacción) */
 export async function POST(req: Request) {
   try {
-    // const user = await requireUser(req);   // AJUSTA: protege la ruta
+    const usuario = await obtenerUsuarioAutenticado(req);
+    if (!(await autorizar(usuario.id, "cargas.transferencia", "crear", "transferencia"))) {
+      return forbidden("No tiene permiso para esta acción: requiere el permiso cargas.transferencia");
+    }
     const b = await req.json().catch(() => null);
     if (!b) return errorFormulario("Cuerpo de la petición no válido", 400);
 
@@ -84,6 +94,13 @@ export async function POST(req: Request) {
     if (!b.dependencia || !String(b.contenido ?? "").trim() || !String(b.responsable ?? "").trim())
       return errorFormulario("Faltan datos obligatorios", 400);
     if (!TIPOS.includes(b.tipo)) return errorFormulario("Tipo de entrega no válido", 400);
+    if (usuario.perfil === "dependencia") {
+      const { data: propia, error: eDep } = await supabase
+        .from("dependencia").select("nombre").eq("id", usuario.dependencia_id ?? -1).maybeSingle();
+      if (eDep) throw eDep;
+      if (!propia || propia.nombre.trim().toLowerCase() !== String(b.dependencia).trim().toLowerCase())
+        return errorFormulario("Solo puede registrar transferencias de su dependencia", 403, { campo: "dependencia", tipo: "permiso" });
+    }
     // El Excel que entrega la dependencia se guarda tal cual como acta (no se lee fila por fila):
     // el inventario detallado es opcional.
     const carpetas: unknown[] = Array.isArray(b.carpetas) ? b.carpetas : [];
@@ -133,7 +150,7 @@ export async function POST(req: Request) {
         dependencia: b.dependencia, anio: b.anio, tipo: b.tipo,
         contenido: b.contenido, responsable: b.responsable, ubicacion: b.ubicacion ?? "",
         carpetas: inventario,
-        usuario_id: null, // AJUSTA: id de la tabla `usuario` del usuario autenticado (user.id)
+        usuario_id: usuario.id, // queda como quien registró y en la auditoría
       },
     });
 
@@ -196,6 +213,7 @@ export async function POST(req: Request) {
     }
     return NextResponse.json(data, { status: 201 });
   } catch (e) {
+    if (e instanceof Response) return e; // sin sesión o token no válido
     console.error("POST /api/transferencias", e);
     return errorSistema("INTERNO", 500, { detalle: "no se pudo registrar la transferencia" });
   }

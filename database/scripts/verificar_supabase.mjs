@@ -42,6 +42,7 @@ const MIGRACIONES = [
   ["20261019000000_historico_comunicaciones.sql",   ["rpc:fn_historico_importar", "rpc:fn_historico_calendario", "rpc:fn_historico_mes"]],
   ["20261020000000_archivo_busqueda.sql",          ["rpc:fn_alcance_consulta", "rpc:fn_archivo_arbol", "rpc:fn_archivo_buscar"]],
   ["20261031000000_transferencias_sin_supabase.sql", ["rpc:registrar_transferencia"]],
+  ["20261101000000_autorizar_accion.sql",         ["rpc:fn_autorizar"]],
   ["20261012000000_docx_formato_permitido.sql",     ["tabla:parametro"]],
 ];
 
