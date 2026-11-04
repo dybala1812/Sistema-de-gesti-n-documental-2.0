@@ -74,3 +74,15 @@
   Requisito: RF-AC-009, RF-AC-023, regla 10 (permisos validados en el backend)
   Evidencia: las tres rutas exigen sesión (obtenerUsuarioAutenticado) y el permiso cargas.transferencia con autorizar() (fn_autorizar, migración 32: audita el intento denegado con usuario y acción; sin la migración revisa el permiso sin auditar); Dependencia solo lista y abre las suyas (otra dependencia → 404) y solo registra para la suya (403); registrar_transferencia recibe el usuario que registra (antes null). Pruebas: probar_local.sh 165 OK (2 nuevas de fn_autorizar); en vivo contra el backend de desarrollo: sin token 401 en las tres; con el usuario de desarrollo (con permiso) lista y detalle 200, POST vacío 400 de validación; tsc backend 0, lint 0 errores.
   Pendiente: aplicar la migración 32 en Supabase; revisión humana. Código de dybala1812, corregido a pedido del usuario.
+
+- [ ] SGD-096: Ajustes de NOVA para producción: VITE_SGD_API_URL en el build de Docker y blob: en frame-src (visor de PDF)
+  Tipo: fix
+  Etiquetas: despliegue
+  Evidencia: NOVA_FT Dockerfile recibe VITE_SGD_API_URL (ARG + ENV); nginx.conf y nginx.local.conf con frame-src 'self' blob: …; fusionado en desarrollo-archivo-central y main de NOVA_FT (PR #13 y #14). No se construyó la imagen (Docker apagado).
+  Pendiente: producción debe pasar VITE_SGD_API_URL=https://<backend SGD>/api en los build.args de NOVA; revisión humana
+
+- [ ] SGD-097: App del celular (/movil): carga masiva con Tomar foto y Galería; lo que no trae el nombre del estudiante pide los datos
+  Tipo: feature
+  Requisito: RF-AC-021, RF-AC-022
+  Evidencia: NOVA_FT movil/AppMovil.tsx: botones Tomar foto (cámara trasera) y Galería o archivos; los archivos nombrados APELLIDOS NOMBRES - cédula siguen igual; fotos y archivos sin ese nombre quedan "Faltan datos" con miniatura y campos (apellidos, nombres, cédula) y pasan a Listo al completarlos; cada foto se sube como PDF reducido. Probado en el navegador en vista de celular y por el usuario en su teléfono; tsc frontend 28 (línea base); build de producción limpio.
+  Pendiente: revisión humana; fusionar feature/SGD-097-movil-masiva-fotos en desarrollo-archivo-central y luego en main
