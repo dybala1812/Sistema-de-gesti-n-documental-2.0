@@ -66,7 +66,7 @@
   Tipo: chore
   Spec: despliegue/README.md
   Evidencia: D-29 y D-30; despliegue/docker-compose.yml (PostgreSQL 18 + PostgREST + Nginx + backend); database/scripts/instalar_local.sh (34 migraciones en PostgreSQL 18 temporal, segunda corrida sin cambios; service_role lee y registra, anon sin acceso); migración 31 (I-20) con pruebas; Dockerfile standalone probado con node server.js (/api/salud 200, sin token 401); scripts/armar_rama_despliegue.sh; ruta de Archivo Central solo para rol area; npm test 21/21, tsc backend 0, tsc frontend 28 (línea base), vite build limpio.
-  Pendiente: probar docker compose en un servidor (Docker estaba apagado); nivel_formacion sin RLS (migración 27); prueba desactualizada de historias (D-27); exportar la registrar_transferencia original; revisión humana
+  Pendiente: docker compose probado en local el 2026-11-11 (ver SGD-099), falta en el servidor real con el NOVA real; nivel_formacion sin RLS (migración 27); prueba desactualizada de historias (D-27); exportar la registrar_transferencia original; revisión humana
 
 - [ ] SGD-095: [BUG] Rutas de transferencias sin autenticación: GET/POST /api/transferencias y GET /api/transferencias/{id}
   Tipo: bug
@@ -86,3 +86,10 @@
   Requisito: RF-AC-021, RF-AC-022
   Evidencia: NOVA_FT movil/AppMovil.tsx: botones Tomar foto (cámara trasera) y Galería o archivos; los archivos nombrados APELLIDOS NOMBRES - cédula siguen igual; fotos y archivos sin ese nombre quedan "Faltan datos" con miniatura y campos (apellidos, nombres, cédula) y pasan a Listo al completarlos; cada foto se sube como PDF reducido. Probado en el navegador en vista de celular y por el usuario en su teléfono; tsc frontend 28 (línea base); build de producción limpio.
   Pendiente: revisión humana; fusionar feature/SGD-097-movil-masiva-fotos en desarrollo-archivo-central y luego en main
+
+- [ ] SGD-099: [BUG] Token de NOVA vencido daba error 500; NOVA caído daba "error inesperado" en vez de 1004
+  Tipo: bug
+  Prioridad: alta (lo ven todos los usuarios cuando vence la sesión)
+  Requisito: D-21 (contrato de errores), regla 10
+  Evidencia: hallado al probar el docker compose completo. lib/auth.ts: NOVA 401/403 → 401 "La sesión de NOVA venció o no es válida"; NOVA inalcanzable o 5xx → 502 con error 1004. Rutas de transferencias usan el manejador común para esos casos. Probado en Docker con NOVA simulado: token vencido 401 (transferencias y catálogos), NOVA apagado 502/1004, salud 200, y la prueba completa de punta a punta otra vez bien; tsc backend 0, npm test 21/21.
+  Pendiente: revisión humana; regenerar despliegue-backend tras fusionar

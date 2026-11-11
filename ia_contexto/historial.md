@@ -10,6 +10,12 @@ Seguridad: secretos, validaciones, permisos revisados
 Commit: hash o "ninguno"
 -->
 
+## 2026-11-11 — prueba | docker compose completo en local y SGD-099 en revisión
+Cambio: se levantó el docker compose de producción desde una copia limpia de despliegue-backend con un NOVA simulado. Encontró que un token de NOVA vencido daba 500 y NOVA caído daba 1000; corregido (SGD-099).
+Tests: build 3 min, imagen 305 MB, 35 migraciones; 401/403/200 según sesión y perfil; transferencia TR-2026-001 con usuario y ubicación; documento subido y descargado idéntico del volumen; auditoría para Archivo Central; reinicio sin perder datos ni repetir migraciones; tras el arreglo: vencido 401, NOVA apagado 502/1004.
+Pendiente: repetir en el servidor real con el NOVA real.
+Commit: rama fix/SGD-099-errores-de-nova.
+
 ## 2026-11-04 — SGD-096 y SGD-097 en revisión | NOVA lista para producción y fotos en la carga masiva del celular
 Cambio: SGD-096 en NOVA_FT (VITE_SGD_API_URL en el Dockerfile, blob: en frame-src), fusionado en main. SGD-097: la carga masiva de /movil acepta cámara y galería y pide los datos del estudiante cuando el nombre del archivo no los trae.
 Tests: tsc frontend 28 (línea base); vite build limpio; vista de celular en el navegador; prueba del usuario en su teléfono.
