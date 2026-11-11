@@ -9,6 +9,10 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     agentFeedback: true,
+    // middleware.ts (CORS) hace que Next guarde el cuerpo de cada petición en memoria, con un tope de
+    // 10 MB por defecto: una subida mayor llegaba cortada y fallaba con 500. El máximo por archivo es
+    // 50 MB (parámetro tamano_maximo_archivo_mb), más lo que agrega el formulario multipart.
+    proxyClientMaxBodySize: "60mb",
   },
   cacheComponents: true,
   partialPrefetching: true,
