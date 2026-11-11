@@ -59,14 +59,24 @@ async function fetchPerfilNova(token: string): Promise<PerfilNova> {
   if (!NOVA_API_URL) {
     throw new Error("Falta la variable de entorno NOVA_API_URL");
   }
-  const res = await fetch(`${NOVA_API_URL}/api/users/perfil/`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${NOVA_API_URL}/api/users/perfil/`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    });
+  } catch (e) {
+    // NOVA caído o inalcanzable (red, DNS): error de sistema 1004 (D-21).
+    throw Object.assign(new Error(`NOVA no respondió: ${e instanceof Error ? e.message : String(e)}`), { servicio: "NOVA" });
+  }
+  // Token vencido o no válido: la persona debe volver a iniciar sesión en NOVA (no es un error del sistema).
+  if (res.status === 401 || res.status === 403) {
+    throw new Response(JSON.stringify({ error: "La sesión de NOVA venció o no es válida: vuelva a iniciar sesión" }), { status: 401 });
+  }
   if (!res.ok) {
-    throw new Error(`NOVA respondió ${res.status}: ${await res.text()}`);
+    throw Object.assign(new Error(`NOVA respondió ${res.status}`), { servicio: "NOVA", statusExterno: res.status });
   }
   return (await res.json()) as PerfilNova;
 }
