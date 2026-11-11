@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase"; // AJUSTA: nombre/ruta real de tu cliente de Supabase
-import { errorFormulario, errorSistema, forbidden } from "@/lib/errors";
+import { errorFormulario, errorSistema, forbidden, handleError } from "@/lib/errors";
 import { obtenerUsuarioAutenticado } from "@/lib/auth";
 import { autorizar } from "@/lib/catalogos";
 
@@ -108,7 +108,8 @@ export async function GET(req: Request, ctx: Ctx) {
       aviso_archivos: avisoArchivos,
     });
   } catch (e) {
-    if (e instanceof Response) return e; // sin sesión o token no válido
+    // Sin sesión o token no válido (Response), o NOVA sin responder (1004): contrato de errores común.
+    if (e instanceof Response || (e as { servicio?: string } | null)?.servicio) return handleError(e);
     console.error("GET /api/transferencias/[id]", e);
     return errorSistema("INTERNO", 500, { detalle: "no se pudo cargar la transferencia" });
   }
