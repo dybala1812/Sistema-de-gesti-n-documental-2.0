@@ -3,21 +3,23 @@
 Guía para instalar, operar y actualizar el backend y la base de datos del módulo en un servidor propio, con **PostgreSQL 18 propio y sin Supabase** (D-29, D-31). El frontend se publica dentro de NOVA, con el proceso de NOVA (ver §8).
 
 ```text
-Internet ──HTTPS──► Proxy inverso (Nginx/Apache/Traefik, TLS)
-                        ├── nova.<dominio>     → frontend de NOVA (lo publica el equipo de NOVA)
-                        └── sgd-api.<dominio>  → 127.0.0.1:3000  backend  (contenedor "backend")
-                                                      │ red interna de Docker
-                                                      ▼
-                                              PostgreSQL 18 (contenedor "db", sin puerto publicado)
+Internet ──HTTPS──► nova.<dominio>  (nginx del frontend de NOVA, lo publica el equipo de NOVA)
+                        ├── /            → frontend de NOVA (incluye el módulo Archivo Central)
+                        └── /sgd-api/... → sgd_backend:3000/api/...   (red de Docker de NOVA: RED_NOVA)
+                                                │ backend del SGD (contenedor "backend")
+                                                ▼ red interna de este docker compose
+                                         PostgreSQL 18 (contenedor "db", sin puerto publicado)
 Volúmenes: datos_postgres (la base) · archivos_sgd (los documentos escaneados)
 ```
+
+El backend no necesita dominio ni certificado propios: queda bajo el dominio de NOVA, igual que las otras apps que NOVA publica (`/quiz-app/`, `/reportes-app/`…). Si se prefiere un dominio propio, ver la alternativa del §6.
 
 ## 1. Qué falta definir (no sale del código)
 
 | Dato | Para qué | Quién lo da |
 | --- | --- | --- |
 | **Servidor** (propio de la universidad, VPS o nube) y su sistema operativo | Dónde corre Docker | TI de la universidad |
-| **Dominio** del backend (p. ej. `sgd-api.uniautonoma.edu.co`) y su certificado TLS | `VITE_SGD_API_URL` del frontend y el proxy | TI |
+| **Nombre de la red de Docker de NOVA** en el servidor (`docker network ls`) | `RED_NOVA`: el nginx de NOVA alcanza el backend por ella | Equipo de NOVA / TI |
 | **URL del backend de NOVA** accesible desde el servidor | `NOVA_API_URL` (valida cada token) | Equipo de NOVA |
 | **URL pública del frontend de NOVA** | `ALLOWED_ORIGINS` (CORS) | Equipo de NOVA |
 | **Destino de los respaldos fuera del servidor** (NAS, otro disco, almacenamiento institucional) | Copias de seguridad | TI |
@@ -71,7 +73,8 @@ Use claves **hexadecimales** (`-hex`): van dentro de una URL de conexión y cara
 | `SGD_BACKEND_PASSWORD` | Sí | Clave del rol `sgd_backend`, con el que se conecta el backend |
 | `NOVA_API_URL` | Sí | Backend de NOVA, sin `/api` al final (p. ej. `https://nova-api.<dominio>`) |
 | `ALLOWED_ORIGINS` | Sí | URL pública del frontend de NOVA (p. ej. `https://nova.<dominio>`); varias, separadas por comas |
-| `PUERTO_BACKEND` | No | Dónde publica Docker el backend. Por defecto `127.0.0.1:3000` (solo el proxy lo alcanza) |
+| `RED_NOVA` | Sí | Red de Docker donde corre NOVA (`docker network ls`). El backend se une con el alias `sgd_backend` |
+| `PUERTO_BACKEND` | No | Puerto del backend en el propio servidor, para revisar `/api/salud`. Por defecto `127.0.0.1:3000` (no se abre al público) |
 | `TZ` | No | Zona horaria de los contenedores (`UTC` por defecto) |
 | `N8N_SERVICE_TOKEN` | Con la Bandeja | Token largo y aleatorio que n8n envía al backend (`openssl rand -hex 32`) |
 | `N8N_WEBHOOK_REMITIR_URL`, `N8N_WEBHOOK_RESPONDER_URL`, `N8N_WEBHOOK_RECORDATORIO_URL` | Con la Bandeja | URL de los webhooks de n8n que dispara el backend |
@@ -119,7 +122,17 @@ Una base nueva trae parámetros, plantillas, permisos por perfil, tipos document
 
 Imagen `sgd-backend` construida desde `backned_sistema_gestion_documental/Dockerfile` (Next.js standalone, Node 24, usuario sin privilegios). Los archivos subidos van al volumen `archivos_sgd` (`/data/archivos`), nunca dentro de la imagen. `HEALTHCHECK` contra `GET /api/salud`, que responde `{"ok":true,"bd":true}` solo si llega a PostgreSQL.
 
-### Proxy inverso con HTTPS (ejemplo Nginx)
+### Publicación: dentro del dominio de NOVA (forma principal)
+
+El `nginx.conf` del frontend de NOVA tiene la ruta `/sgd-api/`, que pasa cada petición a `sgd_backend:3000/api/` por la red de Docker de NOVA, con subidas de hasta 50 MB. Para que funcione:
+
+1. Poner en `.env` el nombre de esa red: `RED_NOVA=<red de NOVA>` (`docker network ls`; suele ser `<carpeta del compose de NOVA>_default`).
+2. Levantar este compose **después** de NOVA (la red debe existir). Si el backend aún no está, solo `/sgd-api/` responde 502; el resto de NOVA sigue funcionando.
+3. Comprobar desde el servidor: `docker compose exec backend wget -qO- http://localhost:3000/api/salud` y, ya publicado, `curl -s https://nova.<dominio>/sgd-api/salud`.
+
+### Alternativa: dominio propio para el backend
+
+Si TI prefiere publicar el backend en su propio dominio, el frontend de NOVA se construye con `VITE_SGD_API_URL=https://sgd-api.<dominio>/api` y delante del puerto 3000 va un proxy con HTTPS (ejemplo Nginx):
 
 ```nginx
 server {
@@ -151,7 +164,7 @@ docker compose up -d --build
 docker compose ps                                   # db healthy · migraciones exited (0) · backend healthy
 docker compose logs migraciones | tail -5           # ">>> Base lista"
 curl -s http://127.0.0.1:3000/api/salud             # {"ok":true,"bd":true}
-curl -s https://sgd-api.<dominio>/api/salud         # a través del proxy
+curl -s https://nova.<dominio>/sgd-api/salud       # a través del nginx de NOVA
 ```
 
 **Primer administrador**, después de que la persona entre al módulo por primera vez desde NOVA:
@@ -170,10 +183,10 @@ Comandos útiles: `docker compose logs -f backend`, `docker compose restart back
 
 El módulo se publica con el frontend de NOVA (repo `DavidM3-M/NOVA_FT`, rama `desarrollo-archivo-central` → `main` de NOVA, que lleva su equipo):
 
-- Variable de build: `VITE_SGD_API_URL=https://sgd-api.<dominio>/api` (con `/api` al final). El `Dockerfile` de NOVA ya la recibe como `ARG`.
+- **No necesita variables del SGD.** Sin `VITE_SGD_API_URL`, el módulo llama a `/sgd-api` en el mismo dominio de NOVA y el `nginx.conf` de NOVA lo pasa al backend (§6). `VITE_SGD_API_URL` solo se usa en desarrollo o con la alternativa de dominio propio.
 - El `nginx.conf` de NOVA ya permite `blob:` en `frame-src` (visor de PDF).
 - No lleva tokens ni claves del SGD: nada sensible va en variables `VITE_*`.
-- `ALLOWED_ORIGINS` del backend debe ser exactamente el origen público del frontend.
+- `ALLOWED_ORIGINS` del backend: el origen público de NOVA (p. ej. `https://nova.<dominio>`).
 
 ## 9. Persistencia y copias de seguridad
 
@@ -262,5 +275,7 @@ docker image prune -f                  # limpia imágenes viejas
 | `backend` no arranca y `migraciones` salió con error | Una migración falló | `docker compose logs migraciones`; corregir y `docker compose up -d` |
 | `/api/salud` responde 503 `{"bd":false}` | El backend no llega a la base | `docker compose ps db`; revisar `SGD_BACKEND_PASSWORD` (sin caracteres especiales) |
 | Error de sistema "Falta aplicar una migración" (número de error MIGRACION) | La base no tiene una función o tabla nueva | `docker compose run --rm migraciones` |
-| El módulo no carga en NOVA (CORS) | `ALLOWED_ORIGINS` no coincide con el origen del frontend | Ajustar `.env` y `docker compose up -d` |
+| `/sgd-api/` responde 502 en NOVA | El backend no está en la red de NOVA o está apagado | `docker compose ps`; revisar `RED_NOVA` y que el backend esté `healthy`; `docker network inspect <red> ` debe listar `sgd_backend` |
+| `docker compose up` dice "network … declared as external, but could not be found" | `RED_NOVA` no coincide con la red de NOVA, o NOVA no está levantado | `docker network ls` y corregir `RED_NOVA` |
+| El módulo no carga en NOVA (CORS) | Solo con la alternativa de dominio propio: `ALLOWED_ORIGINS` no coincide con el origen del frontend | Ajustar `.env` y `docker compose up -d` |
 | 403 "Usuario sin acceso al módulo" | La persona no tiene perfil del SGD | Asignarlo en Catálogos › Usuarios (o el primer administrador por SQL) |

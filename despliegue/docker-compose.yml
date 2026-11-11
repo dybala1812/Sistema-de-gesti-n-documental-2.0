@@ -2,8 +2,9 @@
 #
 #   db           PostgreSQL 18 con los datos (volumen datos_postgres). Solo red interna.
 #   migraciones  aplica las migraciones que falten, seed.sql y el rol del backend; termina y se apaga
-#   backend      el backend Next.js (puerto 3000; delante va el proxy HTTPS de producción).
-#                Se conecta directo a PostgreSQL con el rol sgd_backend (driver pg).
+#   backend      el backend Next.js. Se conecta directo a PostgreSQL con el rol sgd_backend (driver pg).
+#                Se une a la red de Docker de NOVA (RED_NOVA) con el alias sgd_backend: el nginx de
+#                NOVA lo publica en https://<dominio de NOVA>/sgd-api/ (mismo dominio, sin CORS).
 #
 # Uso (desde despliegue/):  cp .env.ejemplo .env   →   completar   →   docker compose up -d --build
 # Guía completa: README_DEPLOY.md en la raíz del repositorio.
@@ -59,7 +60,18 @@ services:
       - "${PUERTO_BACKEND:-127.0.0.1:3000}:3000"
     volumes:
       - archivos_sgd:/data/archivos
+    networks:
+      default:
+      nova:
+        aliases:
+          - sgd_backend
     restart: unless-stopped
+
+networks:
+  # Red de Docker donde corre NOVA (ver con `docker network ls`). Debe existir antes de levantar.
+  nova:
+    external: true
+    name: ${RED_NOVA:?Falta RED_NOVA (la red de Docker de NOVA, ver docker network ls)}
 
 volumes:
   # Respaldar los dos juntos: la base referencia cada archivo por su id (RN-AC-14). Ver respaldar.sh.

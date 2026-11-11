@@ -33,7 +33,7 @@ Un repositorio clasificado (**Dependencia → Año → Asunto**, cada asunto con
  │ React + Vite · módulo en   │                                │ GET /api/users/perfil│
  │ el Panel de Área           │                                └──────────▲───────────┘
  └─────────────┬──────────────┘                                           │
-               │ HTTPS  VITE_SGD_API_URL (…/api) + token                  │
+               │ HTTPS  /sgd-api (mismo dominio, nginx de NOVA) + token   │
                ▼                                                          │
  ┌────────────────────────────┐───────────────────────────────────────────┘
  │ Backend SGD (Next.js 16)   │◄────── n8n (Bandeja de comunicaciones: F1–F6)
