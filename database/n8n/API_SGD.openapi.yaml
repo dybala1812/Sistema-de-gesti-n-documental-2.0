@@ -1,0 +1,1603 @@
+# =============================================================================
+#  SGD · Archivo Central — Documentación de la API (OpenAPI 3.0)
+#  Bandeja de comunicaciones y triaje: API pública (n8n F7), pantalla de NOVA y APIs internas n8n ↔ backend.
+#  Ver en Swagger: https://editor.swagger.io (File › Import file) o cualquier visor OpenAPI.
+#  Arquitectura: ARQUITECTURA_TRIAJE.md · Modelo de datos: MODELO_DATOS_TRIAJE.md
+# =============================================================================
+openapi: 3.0.3
+info:
+  title: SGD · API de la Bandeja de comunicaciones y del triaje
+  version: 2.0.0
+  description: |-
+    API del **Sistema de Gestión Documental · Archivo Central** para la Bandeja de comunicaciones y el triaje de correos (D-15, D-19, D-32).
+    Un solo contrato con las tres puertas que existen:
+
+    | Puerta | Quién la usa | Autenticación | Etiquetas |
+    | --- | --- | --- | --- |
+    | **API pública de triaje** (n8n F7, `/webhook/triaje/*`) | Sistemas externos y el evaluador | Cabecera `X-API-Key` + CORS | *API pública de triaje (F7)* |
+    | **Pantalla de NOVA** (backend, `/api/comunicaciones/*`) | La Bandeja dentro de NOVA | Token de sesión de NOVA + permiso `comunicaciones.gestionar` | *Pantalla de NOVA* |
+    | **APIs internas** (webhooks `/webhook/bandeja/*` y backend `/api/n8n/*`, `/api/archivos`) | Backend ↔ n8n (F1–F5, F7) | `Authorization: Bearer <N8N_SERVICE_TOKEN>` | *Webhooks de la Bandeja*, *F1* … *F7*, *Comunes*, *Archivos* |
+
+    Los webhooks viven en **n8n** (puerto 5679 en local) y declaran su propio servidor; el resto vive en el **backend** (puerto 3000).
+    n8n no se conecta a la base de datos: cada ruta `/api/n8n/*` llama a una función SQL `n8n_*` o a una consulta del backend.
+
+    ## Convenciones
+
+    - Cuerpo y respuesta JSON. Las rutas `/api/n8n/*` son `POST`; `/api/archivos` es `POST multipart/form-data` y `GET /api/archivos/{id}` devuelve el binario.
+    - **La respuesta siempre trae un valor** (p. ej. `{ "id": null }`), para que n8n no se quede sin ítems. Si la función SQL devuelve
+      **una sola columna**, la ruta responde el valor solo (`/correos/triaje` → `17`, `/correos/sin-asociar` → `1`); `/correos/acuse` lo envuelve en `{ id }`.
+    - Errores: formulario `400` `{ error, campo, tipo }` · token del backend `401` · token o API Key en n8n `403` · regla de negocio `409` (texto `RN-AC-xx`) ·
+      sistema `5xx` `{ error: "<número>", motivo }`.
+    - Las rutas que registran una acción piden `usuario` (también aceptan `usuario_id`) para la auditoría.
+    - En los flujos la URL del backend va como `http://localhost:3000`; `flujos n8n/scripts/importar.js` la cambia por `BACKEND_URL` al importar.
+
+    ## Idempotencia
+
+    `message_id` es **único** en `comunicacion`, `correo_sin_asociar` y `correo_enviado`: volver a procesar un correo no lo duplica (RNF-AC-04).
+    La categoría, la prioridad y el resumen los sugiere la IA (`triaje_origen = ia`); una corrección de una persona (`manual`) no se vuelve a pisar.
+    El triaje nunca cambia el estado ni la dependencia de la comunicación.
+
+    ## CORS y rutas de F7
+
+    Cada webhook de F7 responde el *preflight* `OPTIONS` con `204` y `Access-Control-Allow-Origin` = `FRONTEND_ORIGEN`; a otro origen le devuelve
+    ese mismo valor, así que el navegador bloquea la respuesta. Cabeceras permitidas: `x-api-key`, `content-type`.
+    En n8n un webhook con parámetro se publica como `/webhook/<webhookId>/correos/:id`: por eso el nodo `PATCH /correos/:id` de F7 tiene `webhookId = triaje` (no cambiarlo).
+
+    ## Quién llama a quién
+
+    | Webhook de n8n | Flujo | Lo dispara (backend) | Variable del backend |
+    | --- | --- | --- | --- |
+    | `POST /webhook/bandeja/remitir` | F2 | `POST /api/comunicaciones/{id}/enviar-remision` | `N8N_WEBHOOK_REMITIR_URL` |
+    | `POST /webhook/bandeja/responder` | F3 | `/enviar-respuesta`, `/responder-directo` | `N8N_WEBHOOK_RESPONDER_URL` |
+    | `POST /webhook/bandeja/recordatorio` | F4 | `/recordatorio-manual`, `/correo-adicional` | `N8N_WEBHOOK_RECORDATORIO_URL` |
+
+    | Flujo | Rutas del backend que usa | Función SQL |
+    | --- | --- | --- |
+    | F1 (tools de la IA) | `/api/n8n/correos/estado`, `/dependencias/buscar`, `/comunicaciones/buscar` | `n8n_estado_correo` · consultas en TypeScript |
+    | F1 | `/api/archivos`, `/correos/nuevo`, `/correos/triaje`, `/correos/acuse`, `/correos/error-acuse`, `/correos/respuesta-dependencia`, `/correos/sin-asociar`, `/correos/rebote` | `n8n_registrar_correo_nuevo`, `n8n_guardar_triaje`, `n8n_registrar_acuse`, `n8n_registrar_error_acuse`, `n8n_registrar_respuesta_dependencia`, `n8n_guardar_sin_asociar`, `n8n_registrar_rebote` |
+    | F2 | `/api/n8n/remisiones/leer`, `/remitir`, `/devolver`, `/api/archivos/{id}`, `/correos/enviado` | consultas en TypeScript · `n8n_registrar_correo_enviado` |
+    | F3 | `/api/n8n/respuestas/leer-entrada`, `/responder`, `/errores/envio`, `/auditoria` | `n8n_leer_entrada`, `n8n_responder`, `n8n_registrar_error_envio`, `n8n_auditar` |
+    | F4 | `/api/n8n/recordatorios/registrar`, `/correos/adicional` | `n8n_registrar_recordatorios`, `n8n_registrar_correo_adicional` |
+    | F5 | `/api/n8n/plantillas/leer`, `/api/archivos/{id}`, `/correos/enviado` | `n8n_leer_plantilla`, `n8n_registrar_correo_enviado` |
+    | F7 | `/api/n8n/triaje/correos`, `/estadisticas`, `/actualizar` | `n8n_triaje_listar`, `n8n_triaje_estadisticas`, `n8n_triaje_actualizar` |
+
+    Rutas que existen pero los flujos finales no usan (versiones anteriores, F4 automático, F6): `/api/n8n/correos/sugerencia`, `/auditoria/error-flujo`,
+    `/parametros/leer`, `/recordatorios/dia-habil`, `/pendientes`, `/resumen-dia` y `/api/n8n/comunicaciones` (versión anterior de `/correos/nuevo`).
+
+    Sin Supabase (D-31): ningún flujo usa nodos de Supabase; F5 lee la plantilla con `/api/n8n/plantillas/leer`.
+
+    ## Documentos relacionados
+
+    Arquitectura (tipo, componentes, secuencias, seguridad, idempotencia): `ARQUITECTURA_TRIAJE.md`. Modelo de datos: `MODELO_DATOS_TRIAJE.md`. Flujos: `flujos n8n/`.
+
+    ## Cambios del 2026-11-11
+
+    - F1 manda a `/correos/rebote` los campos del contrato (`ids, de, asunto`) y a `/correos/sin-asociar` el `motivo` obligatorio.
+    - F1 guarda el triaje (`/correos/triaje`) y deja el acuse en el historial (ruta nueva `/correos/acuse`, migración 38; si falla, `/correos/error-acuse`).
+    - F3 usa el `usuario_id` que manda el backend y acepta los adjuntos como `archivo_ids` o `adjuntos_ids`.
+    - `/api/n8n/remisiones/devolver` exige `respondida_dependencia` (antes pedía `remitida`), como dicen RN-AC-09 y la base de datos.
+    - Este archivo une los anteriores `API_triaje.openapi.yaml`, `API_bandeja_n8n.openapi.yaml` y `APIs_backend_n8n.md`.
+servers:
+  - url: http://localhost:3000
+    description: Backend local (next dev)
+  - url: https://{backend}
+    description: Backend en producción
+    variables:
+      backend:
+        default: sgd-api.ejemplo.edu.co
+security:
+  - servicio: []
+tags:
+  - name: API pública de triaje (F7)
+    description: Webhooks de n8n con X-API-Key y CORS. GET /correos, GET /estadisticas, PATCH /correos/{id}.
+  - name: Pantalla de NOVA
+    description: Rutas del backend que usa la Bandeja con el token de sesión de NOVA.
+  - name: Webhooks de la Bandeja
+    description: Webhooks de n8n F2, F3 y F4. Los llama el backend con el token de servicio.
+  - name: F1 · Correo entrante
+  - name: F2 · Remitir y devolver
+  - name: F3 · Responder al remitente
+  - name: F4 · Recordatorio y adicional
+  - name: F5 · Envío de correo
+  - name: F7 · Triaje
+  - name: Comunes
+  - name: Archivos
+paths:
+  /webhook/triaje/correos:
+    servers:
+      - url: http://localhost:5679
+        description: n8n local (flujos n8n/docker-compose.yml)
+      - url: https://{n8n}
+        description: n8n en producción
+        variables:
+          n8n:
+            default: n8n.ejemplo.edu.co
+    get:
+      tags:
+        - API pública de triaje (F7)
+      summary: Lista los correos de entrada, del más reciente al más antiguo
+      security:
+        - apiKey: []
+      parameters:
+        - name: categoria
+          in: query
+          schema:
+            $ref: "#/components/schemas/Categoria"
+        - name: prioridad
+          in: query
+          schema:
+            $ref: "#/components/schemas/Prioridad"
+        - name: leido
+          in: query
+          schema:
+            type: boolean
+        - name: urgentes
+          in: query
+          description: Categoría urgente o prioridad alta
+          schema:
+            type: boolean
+        - name: q
+          in: query
+          description: Busca en asunto y remitente
+          schema:
+            type: string
+        - name: limite
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: pagina
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+      responses:
+        "200":
+          description: Página de correos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  filas:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CorreoTriaje"
+                  total:
+                    type: integer
+                  pagina:
+                    type: integer
+                  limite:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/Invalido"
+        "403":
+          description: Falta la API Key o no es válida
+  /webhook/triaje/estadisticas:
+    servers:
+      - url: http://localhost:5679
+        description: n8n local (flujos n8n/docker-compose.yml)
+      - url: https://{n8n}
+        description: n8n en producción
+        variables:
+          n8n:
+            default: n8n.ejemplo.edu.co
+    get:
+      tags:
+        - API pública de triaje (F7)
+      summary: Contadores de los correos de entrada que no están anulados
+      security:
+        - apiKey: []
+      responses:
+        "200":
+          description: Contadores
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Estadisticas"
+        "403":
+          description: Falta la API Key o no es válida
+  /webhook/triaje/correos/{id}:
+    servers:
+      - url: http://localhost:5679
+        description: n8n local (flujos n8n/docker-compose.yml)
+      - url: https://{n8n}
+        description: n8n en producción
+        variables:
+          n8n:
+            default: n8n.ejemplo.edu.co
+    patch:
+      tags:
+        - API pública de triaje (F7)
+      summary: Marca como leído o no leído y reclasifica
+      security:
+        - apiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CambiosTriaje"
+      responses:
+        "200":
+          description: Correo actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CorreoTriaje"
+        "400":
+          $ref: "#/components/responses/Invalido"
+        "403":
+          description: Falta la API Key o no es válida
+        "404":
+          $ref: "#/components/responses/NoExiste"
+  /api/comunicaciones:
+    get:
+      tags:
+        - Pantalla de NOVA
+      summary: Lista las comunicaciones con su detalle (solo las de su dependencia para el perfil Dependencia)
+      security:
+        - tokenNova: []
+      parameters:
+        - name: estado
+          in: query
+          schema:
+            type: string
+        - name: categoria
+          in: query
+          schema:
+            $ref: "#/components/schemas/Categoria"
+        - name: prioridad
+          in: query
+          schema:
+            $ref: "#/components/schemas/Prioridad"
+        - name: leido
+          in: query
+          schema:
+            type: boolean
+        - name: anio
+          in: query
+          schema:
+            type: integer
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: limite
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Lista de comunicaciones
+        "400":
+          $ref: "#/components/responses/Invalido"
+        "401":
+          description: Token requerido
+  /api/comunicaciones/{id}:
+    patch:
+      tags:
+        - Pantalla de NOVA
+      summary: Marca como leído o no leído y reclasifica. Exige comunicaciones.gestionar; el intento denegado se audita
+      security:
+        - tokenNova: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CambiosTriaje"
+      responses:
+        "200":
+          description: Comunicación actualizada
+        "400":
+          $ref: "#/components/responses/Invalido"
+        "401":
+          description: Token requerido
+        "403":
+          description: Sin permiso
+        "404":
+          description: No existe la comunicación
+  /webhook/bandeja/remitir:
+    servers:
+      - url: http://localhost:5679
+        description: n8n local (flujos n8n/docker-compose.yml)
+      - url: https://{n8n}
+        description: n8n en producción
+        variables:
+          n8n:
+            default: n8n.ejemplo.edu.co
+    post:
+      tags:
+        - Webhooks de la Bandeja
+      summary: F2 · Remitir a la dependencia o devolverle la respuesta
+      description: |
+        Valida, lee la comunicación, envía el correo por SMTP con `[SGD <consecutivo>]` en el asunto, guarda la copia y registra la
+        remisión (`nueva → remitida`) o la devolución (`respondida_dependencia → devuelta`). Lo llama `POST /api/comunicaciones/{id}/enviar-remision`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - modo
+                - comunicacion_id
+                - usuario_id
+              properties:
+                modo:
+                  type: string
+                  enum:
+                    - remitir
+                    - devolver
+                comunicacion_id:
+                  type: integer
+                dependencia_id:
+                  type: integer
+                  description: Obligatorio al remitir
+                usuario_id:
+                  type: integer
+                  description: Quién actúa (auditoría)
+                plazo_dias_habiles:
+                  type: integer
+                  default: 5
+                mensaje:
+                  type: string
+                  description: Mensaje del gestor para la dependencia
+                adjuntos_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+            example:
+              modo: remitir
+              comunicacion_id: 9
+              dependencia_id: 11
+              usuario_id: 2
+              plazo_dias_habiles: 5
+              mensaje: Favor dar respuesta.
+      responses:
+        "200":
+          description: Correo enviado y registrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  comunicacion_id:
+                    type: integer
+                  modo:
+                    type: string
+                  message_id:
+                    type: string
+                    example: <3f631593-7d59-7d1d-d725-f9084486c37f@gmail.com>
+        "400":
+          description: "Solicitud inválida: `{ ok: false, errores: [...] }`"
+        "403":
+          description: Falta el token de servicio o no es válido
+        "404":
+          description: No existe la comunicación
+        "409":
+          description: El estado no lo permite (`estado_no_permite`) o no es una entrada (`solo_entradas`)
+        "422":
+          description: La dependencia está inactiva o no tiene correo oficial
+        "502":
+          description: El correo no salió (SMTP) o salió pero el registro falló (queda auditado; no se reenvía)
+  /webhook/bandeja/responder:
+    servers:
+      - url: http://localhost:5679
+        description: n8n local (flujos n8n/docker-compose.yml)
+      - url: https://{n8n}
+        description: n8n en producción
+        variables:
+          n8n:
+            default: n8n.ejemplo.edu.co
+    post:
+      tags:
+        - Webhooks de la Bandeja
+      summary: F3 · Responder al remitente y cerrar
+      description: |
+        Exige la entrada en `respondida_dependencia`. Envía la respuesta con la plantilla `respuesta` (F5), crea la salida `SAL`
+        y cierra la entrada. Lo llaman `/api/comunicaciones/{id}/enviar-respuesta` (manda `adjuntos_ids`) y `/responder-directo`
+        (manda `archivo_ids` y `destinatario`); F3 acepta los dos nombres.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - comunicacion_id
+                - cuerpo
+              properties:
+                comunicacion_id:
+                  type: integer
+                usuario_id:
+                  type: integer
+                  description: Quién actúa; si falta se usa el usuario 2
+                cuerpo:
+                  type: string
+                  maxLength: 20000
+                asunto:
+                  type: string
+                  description: "Por defecto `RE: <asunto de la entrada>`"
+                destinatario:
+                  type: string
+                  description: Si viene
+                  debe coincidir con el remitente de la entrada: null
+                adjuntos_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                archivo_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+            example:
+              comunicacion_id: 9
+              usuario_id: 2
+              cuerpo: El horario de atención es de 8:00 a 12:00.
+      responses:
+        "200":
+          description: Respuesta enviada; entrada cerrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  comunicacion_id:
+                    type: integer
+                  entrada:
+                    type: string
+                    example: ENT-2026-000009
+                  salida_id:
+                    type: integer
+                  salida_consecutivo:
+                    type: string
+                    example: SAL-2026-000001
+                  estado:
+                    type: string
+                    example: cerrada
+                  message_id:
+                    type: string
+        "400":
+          description: "`solicitud_invalida` (falta comunicacion_id o cuerpo, ids de archivo inválidos, destinatario distinto)"
+        "403":
+          description: Falta el token de servicio o no es válido
+        "404":
+          description: "`comunicacion_no_existe`"
+        "409":
+          description: "`solo_entradas` o `estado_no_permite_responder`"
+        "422":
+          description: "`remitente_sin_correo` o `adjuntos_no_pertenecen`"
+        "502":
+          description: "`envio_fallido`: el correo no salió; se puede reintentar"
+  /webhook/bandeja/recordatorio:
+    servers:
+      - url: http://localhost:5679
+        description: n8n local (flujos n8n/docker-compose.yml)
+      - url: https://{n8n}
+        description: n8n en producción
+        variables:
+          n8n:
+            default: n8n.ejemplo.edu.co
+    post:
+      tags:
+        - Webhooks de la Bandeja
+      summary: F4 · Recordatorio a la dependencia o correo adicional (a pedido)
+      description: Lo llaman `/api/comunicaciones/{id}/recordatorio-manual` (modo `recordatorio`) y `/correo-adicional` (modo `adicional`). Envía por F5.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - modo
+                - comunicacion_id
+                - usuario_id
+                - destinatario_correo
+                - asunto
+                - cuerpo
+              properties:
+                modo:
+                  type: string
+                  enum:
+                    - recordatorio
+                    - adicional
+                comunicacion_id:
+                  type: integer
+                usuario_id:
+                  type: integer
+                destinatario_tipo:
+                  type: string
+                  enum:
+                    - remitente
+                    - dependencia
+                  description: Obligatorio en modo adicional
+                destinatario_correo:
+                  type: string
+                  format: email
+                destinatario_nombre:
+                  type: string
+                consecutivo:
+                  type: string
+                asunto:
+                  type: string
+                cuerpo:
+                  type: string
+                adjuntos_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        "200":
+          description: Enviado y registrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  message_id:
+                    type: string
+        "400":
+          description: "`solicitud_invalida`"
+        "403":
+          description: Falta el token de servicio o no es válido
+        "422":
+          description: El envío falló
+  /api/n8n/correos/estado:
+    post:
+      tags:
+        - F1 · Correo entrante
+      summary: Si el correo ya se procesó, a qué comunicación responde y si es del propio buzón (tool de la IA)
+      description: Función `n8n_estado_correo`.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message_id
+              properties:
+                message_id:
+                  type: string
+                asunto:
+                  type: string
+                in_reply_to:
+                  type: string
+                de_correo:
+                  type: string
+      responses:
+        "200":
+          description: Estado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ya_procesado:
+                    type: boolean
+                  comunicacion_id:
+                    type: integer
+                    nullable: true
+                  dependencia_id:
+                    type: integer
+                    nullable: true
+                  dependencia_nombre:
+                    type: string
+                    nullable: true
+                  es_propio:
+                    type: boolean
+        "400":
+          $ref: "#/components/responses/Invalido"
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/dependencias/buscar:
+    post:
+      tags:
+        - F1 · Correo entrante
+      summary: Dependencia activa por su correo oficial (tool de la IA)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - correo
+              properties:
+                correo:
+                  type: string
+      responses:
+        "200":
+          description: "`{ id, nombre, correo_oficial, estado }` o `{ id: null }`"
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/comunicaciones/buscar:
+    post:
+      tags:
+        - F1 · Correo entrante
+      summary: Busca comunicaciones por Message-ID, remitente, consecutivo o asunto (tool de la IA)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message_id:
+                  type: string
+                remitente_correo:
+                  type: string
+                consecutivo:
+                  type: string
+                asunto:
+                  type: string
+                limite:
+                  type: integer
+      responses:
+        "200":
+          description: Lista de comunicaciones con datos básicos (array)
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/correos/nuevo:
+    post:
+      tags:
+        - F1 · Correo entrante
+      summary: Registra un correo nuevo como comunicación ENT (idempotente por Message-ID)
+      description: Función `n8n_registrar_correo_nuevo`. Si el `message_id` ya existe devuelve la comunicación existente.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message_id
+                - de_correo
+              properties:
+                message_id:
+                  type: string
+                de_nombre:
+                  type: string
+                de_correo:
+                  type: string
+                asunto:
+                  type: string
+                  default: (sin asunto)
+                cuerpo:
+                  type: string
+                recibido_en:
+                  type: string
+                  format: date-time
+                in_reply_to:
+                  type: string
+                archivo_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                adjuntos_omitidos:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        "200":
+          description: Comunicación
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  consecutivo:
+                    type: string
+        "400":
+          $ref: "#/components/responses/Invalido"
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/correos/triaje:
+    post:
+      tags:
+        - F1 · Correo entrante
+      summary: Guarda la categoría, prioridad y resumen sugeridos por la IA (no pisa lo manual)
+      description: Función `n8n_guardar_triaje`. Deja `triaje_origen = ia`; si una persona ya corrigió (`manual`) no cambia nada.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - comunicacion_id
+              properties:
+                comunicacion_id:
+                  type: integer
+                categoria:
+                  type: string
+                  enum:
+                    - urgente
+                    - academico
+                    - administrativo
+                    - promociones
+                    - otros
+                  nullable: true
+                prioridad:
+                  type: string
+                  enum:
+                    - alta
+                    - media
+                    - baja
+                  nullable: true
+                resumen:
+                  type: string
+                  maxLength: 500
+                  nullable: true
+      responses:
+        "200":
+          description: "El id de la comunicación como número (p. ej. `17`), o `{ id: null }` si no cambió (ya era `manual` o no existe). La función devuelve una sola columna y el backend la entrega como valor."
+        "400":
+          $ref: "#/components/responses/Invalido"
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/correos/acuse:
+    post:
+      tags:
+        - F1 · Correo entrante
+      summary: Registra en el historial que se envió el acuse de recibo (idempotente por Message-ID)
+      description: Función `n8n_registrar_acuse` (migración 38). Crea el evento `acuse_recibo` y el *trigger* guarda el Message-ID en `comunicacion.ultimo_envio_id`. Solo para entradas (ENT).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - comunicacion_id
+                - message_id
+              properties:
+                comunicacion_id:
+                  type: integer
+                  example: 17
+                message_id:
+                  type: string
+                  description: Message-ID que devolvió el servidor SMTP
+                  example: <7685d2d1-1693-7601-b7f2-cf67c29cdaa0@gmail.com>
+      responses:
+        "200":
+          description: "`{ id }` del evento (el mismo si se repite el Message-ID)"
+          content:
+            application/json:
+              example:
+                id: 34
+        "400":
+          $ref: "#/components/responses/Invalido"
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/correos/error-acuse:
+    post:
+      tags:
+        - F1 · Correo entrante
+      summary: Registra que el acuse de recibo no se pudo enviar (evento error_envio)
+      description: Función `n8n_registrar_error_acuse`.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - comunicacion_id
+              properties:
+                comunicacion_id:
+                  type: integer
+                error:
+                  type: string
+      responses:
+        "200":
+          description: El id del evento como número
+        "400":
+          $ref: "#/components/responses/Invalido"
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/correos/respuesta-dependencia:
+    post:
+      tags:
+        - F1 · Correo entrante
+      summary: Registra la respuesta de una dependencia (remitida o devuelta → respondida_dependencia)
+      description: Función `n8n_registrar_respuesta_dependencia`. Si el estado no lo permite responde 409 con `RN-AC-09`.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - comunicacion_id
+              properties:
+                comunicacion_id:
+                  type: integer
+                de_correo:
+                  type: string
+                asunto:
+                  type: string
+                cuerpo:
+                  type: string
+                message_id:
+                  type: string
+                recibido_en:
+                  type: string
+                  format: date-time
+                archivo_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                adjuntos_omitidos:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        "200":
+          description: "`{ id, consecutivo, estado }`"
+        "401":
+          $ref: "#/components/responses/SinToken"
+        "409":
+          description: Transición inválida (RN-AC-09)
+  /api/n8n/correos/sin-asociar:
+    post:
+      tags:
+        - F1 · Correo entrante
+      summary: Guarda un correo que no se pudo vincular, para revisión manual (idempotente)
+      description: Función `n8n_guardar_sin_asociar`. F1 lo usa también cuando la IA falla (motivo `otro`).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message_id
+                - de_correo
+                - motivo
+              properties:
+                message_id:
+                  type: string
+                in_reply_to:
+                  type: string
+                de_nombre:
+                  type: string
+                de_correo:
+                  type: string
+                asunto:
+                  type: string
+                cuerpo:
+                  type: string
+                recibido_en:
+                  type: string
+                  format: date-time
+                motivo:
+                  type: string
+                  enum:
+                    - otro
+                    - etiqueta_no_coincide
+                    - sin_etiqueta
+                    - remitente_externo_sin_etiqueta
+                posible_comunicacion_id:
+                  type: integer
+                  nullable: true
+                adjuntos:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        "200":
+          description: "Cuántos se insertaron, como número: `1`, o `0` si el Message-ID ya estaba (una sola columna: el backend la entrega como valor)"
+        "400":
+          $ref: "#/components/responses/Invalido"
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/correos/rebote:
+    post:
+      tags:
+        - F1 · Correo entrante
+      summary: Registra un rebote como error de envío en las comunicaciones citadas y lo audita
+      description: Función `n8n_registrar_rebote`. `ids` son los Message-ID que cita el rebote (In-Reply-To, References, cuerpo).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: string
+                  example:
+                    - <eaa02594-7fce-6d9f-ca20-960644317cb1@gmail.com>
+                de:
+                  type: string
+                  example: mailer-daemon@googlemail.com
+                asunto:
+                  type: string
+      responses:
+        "200":
+          description: "`{ asociados, auditado }`"
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/remisiones/leer:
+    post:
+      tags:
+        - F2 · Remitir y devolver
+      summary: Lee la comunicación, su remitente y la dependencia
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - comunicacion_id
+              properties:
+                comunicacion_id:
+                  type: integer
+                dependencia_id:
+                  type: integer
+      responses:
+        "200":
+          description: "`{ id, tipo, estado, consecutivo, asunto, cuerpo, remitente_nombre, remitente_correo, dep_id, dependencia, dep_estado, correo_oficial, plazo_defecto, adjuntos[] }` o `{ id: null }`"
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/remisiones/remitir:
+    post:
+      tags:
+        - F2 · Remitir y devolver
+      summary: Registra la remisión (nueva → remitida) después de enviar el correo
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - usuario
+                - comunicacion_id
+                - dependencia_id
+              properties:
+                usuario:
+                  type: integer
+                comunicacion_id:
+                  type: integer
+                dependencia_id:
+                  type: integer
+                plazo:
+                  type: integer
+                message_id:
+                  type: string
+                mensaje:
+                  type: string
+      responses:
+        "200":
+          description: "`{ id, consecutivo, estado, dependencia_id, fecha_limite }`"
+        "401":
+          $ref: "#/components/responses/SinToken"
+        "409":
+          description: El estado no permite remitir
+  /api/n8n/remisiones/devolver:
+    post:
+      tags:
+        - F2 · Remitir y devolver
+      summary: Registra la devolución (respondida_dependencia → devuelta) y da un nuevo plazo
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - usuario
+                - comunicacion_id
+              properties:
+                usuario:
+                  type: integer
+                comunicacion_id:
+                  type: integer
+                dependencia_id:
+                  type: integer
+                message_id:
+                  type: string
+                mensaje:
+                  type: string
+      responses:
+        "200":
+          description: "`{ id, consecutivo, estado: devuelta, dependencia_id, fecha_limite }`"
+        "401":
+          $ref: "#/components/responses/SinToken"
+        "404":
+          description: No existe la comunicación
+        "409":
+          description: No está en respondida_dependencia o no está remitida a esa dependencia
+  /api/n8n/respuestas/leer-entrada:
+    post:
+      tags:
+        - F3 · Responder al remitente
+      summary: Lee la entrada y sus adjuntos
+      description: Función `n8n_leer_entrada`.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - comunicacion_id
+              properties:
+                comunicacion_id:
+                  type: integer
+      responses:
+        "200":
+          description: "`{ id, tipo, estado, consecutivo, asunto, remitente_nombre, remitente_correo, adjuntos: [{ archivo_id, de_dependencia }] }` o `{ id: null }`"
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/respuestas/responder:
+    post:
+      tags:
+        - F3 · Responder al remitente
+      summary: Crea la salida SAL y cierra la entrada (después de enviar el correo)
+      description: Función `n8n_responder`.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - usuario
+                - entrada_id
+                - asunto
+                - cuerpo
+              properties:
+                usuario:
+                  type: integer
+                entrada_id:
+                  type: integer
+                asunto:
+                  type: string
+                cuerpo:
+                  type: string
+                message_id:
+                  type: string
+                archivos:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        "200":
+          description: Resultado (entrada cerrada y salida creada)
+        "401":
+          $ref: "#/components/responses/SinToken"
+        "409":
+          description: Transición inválida (RN-AC-09)
+  /api/n8n/recordatorios/registrar:
+    post:
+      tags:
+        - F4 · Recordatorio y adicional
+      summary: Registra los recordatorios enviados (marca por_escalar tras el máximo)
+      description: Función `n8n_registrar_recordatorios`.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: integer
+                message_id:
+                  type: string
+      responses:
+        "200":
+          description: Resultado
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/correos/adicional:
+    post:
+      tags:
+        - F4 · Recordatorio y adicional
+      summary: Registra un correo adicional como evento de la comunicación
+      description: Función `n8n_registrar_correo_adicional`.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - usuario
+                - comunicacion_id
+                - destinatario_tipo
+                - asunto
+                - cuerpo
+              properties:
+                usuario:
+                  type: integer
+                comunicacion_id:
+                  type: integer
+                destinatario_tipo:
+                  type: string
+                  enum:
+                    - remitente
+                    - dependencia
+                destinatario_correo:
+                  type: string
+                asunto:
+                  type: string
+                cuerpo:
+                  type: string
+                archivos:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                message_id:
+                  type: string
+      responses:
+        "200":
+          description: Resultado
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/plantillas/leer:
+    post:
+      tags:
+        - F5 · Envío de correo
+      summary: Lee una plantilla de correo por código (reemplaza el nodo de Supabase, D-31)
+      description: Función `n8n_leer_plantilla`.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - codigo
+              properties:
+                codigo:
+                  type: string
+                  enum:
+                    - acuse_recibo
+                    - remision
+                    - devolucion
+                    - respuesta
+                    - recordatorio
+                    - resumen
+                    - adicional
+      responses:
+        "200":
+          description: "`{ codigo, nombre, asunto, cuerpo }` o `{}` si no existe"
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/correos/enviado:
+    post:
+      tags:
+        - F5 · Envío de correo
+      summary: Guarda la copia de un correo enviado (idempotente por Message-ID)
+      description: Función `n8n_registrar_correo_enviado`. La usan F2 y F5. Si `comunicacion_id` no viene, se toma del primer consecutivo.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message_id
+                - para
+                - asunto
+              properties:
+                message_id:
+                  type: string
+                para:
+                  type: string
+                asunto:
+                  type: string
+                cuerpo:
+                  type: string
+                plantilla:
+                  type: string
+                comunicacion_id:
+                  type: integer
+                  nullable: true
+                consecutivos:
+                  type: array
+                  items:
+                    type: string
+                archivo_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                enviado_en:
+                  type: string
+                  format: date-time
+      responses:
+        "200":
+          description: "`{ id, comunicacion_id, duplicado }`"
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/errores/envio:
+    post:
+      tags:
+        - Comunes
+      summary: Registra un error de envío en las comunicaciones afectadas y en la auditoría
+      description: Función `n8n_registrar_error_envio`. F3.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - usuario
+                - comunicaciones
+              properties:
+                usuario:
+                  type: integer
+                comunicaciones:
+                  type: array
+                  items:
+                    type: integer
+                dependencia:
+                  type: integer
+                detalle:
+                  type: object
+      responses:
+        "200":
+          description: Resultado
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/auditoria:
+    post:
+      tags:
+        - Comunes
+      summary: Registra un evento en la auditoría (p. ej. correo enviado pero no registrado)
+      description: Función `n8n_auditar`. F3.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - flujo
+              properties:
+                flujo:
+                  type: string
+                detalle:
+                  type: object
+      responses:
+        "200":
+          description: Resultado
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/triaje/correos:
+    post:
+      tags:
+        - F7 · Triaje
+      summary: Lista de correos de entrada con filtros y paginación (detrás de GET /webhook/triaje/correos)
+      description: Función `n8n_triaje_listar`.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                categoria:
+                  type: string
+                prioridad:
+                  type: string
+                leido:
+                  type: boolean
+                urgentes:
+                  type: boolean
+                q:
+                  type: string
+                limite:
+                  type: integer
+                pagina:
+                  type: integer
+      responses:
+        "200":
+          description: "`{ filas: [...], total, pagina, limite }`"
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/triaje/estadisticas:
+    post:
+      tags:
+        - F7 · Triaje
+      summary: Contadores (detrás de GET /webhook/triaje/estadisticas)
+      description: Función `n8n_triaje_estadisticas`.
+      responses:
+        "200":
+          description: "`{ total, no_leidos, urgentes, por_categoria, por_prioridad }`"
+        "401":
+          $ref: "#/components/responses/SinToken"
+  /api/n8n/triaje/actualizar:
+    post:
+      tags:
+        - F7 · Triaje
+      summary: Marca como leído y reclasifica (detrás de PATCH /webhook/triaje/correos/:id)
+      description: Función `n8n_triaje_actualizar`. Una reclasificación deja `triaje_origen = manual`.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+              properties:
+                id:
+                  type: integer
+                leido:
+                  type: boolean
+                categoria:
+                  type: string
+                prioridad:
+                  type: string
+      responses:
+        "200":
+          description: Fila actualizada
+        "400":
+          $ref: "#/components/responses/Invalido"
+        "401":
+          $ref: "#/components/responses/SinToken"
+        "404":
+          description: No existe la comunicación
+  /api/archivos:
+    post:
+      tags:
+        - Archivos
+      summary: Sube un archivo (adjunto de correo) y devuelve su id
+      description: El backend calcula el SHA-256, lo guarda en carpetas (`RAIZ_ARCHIVOS`) y crea la fila en `archivo`. F1.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - archivo
+                - categoria
+              properties:
+                archivo:
+                  type: string
+                  format: binary
+                categoria:
+                  type: string
+                  example: comunicacion
+                contexto:
+                  type: string
+                  description: JSON, p. ej. `{"fuente":"n8n","correo_id":"<message-id>"}`
+      responses:
+        "201":
+          description: Archivo guardado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  archivo_id:
+                    type: string
+                    format: uuid
+                  nombre_original:
+                    type: string
+                  hash_sha256:
+                    type: string
+                  tamano_bytes:
+                    type: integer
+                  mime:
+                    type: string
+                  ruta_relativa:
+                    type: string
+        "400":
+          $ref: "#/components/responses/Invalido"
+        "413":
+          description: El archivo excede el tamaño máximo
+        "415":
+          description: Formato no permitido
+  /api/archivos/{id}:
+    get:
+      tags:
+        - Archivos
+      summary: Descarga el binario de un archivo (F2 y F5 para adjuntar)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Binario con su Content-Type
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: No existe el archivo
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: TRIAJE_API_KEY (credencial «Webhook Triaje (X-API-Key)» de n8n)
+    tokenNova:
+      type: http
+      scheme: bearer
+      description: Token de sesión de NOVA
+    servicio:
+      type: http
+      scheme: bearer
+      description: N8N_SERVICE_TOKEN (mismo valor en el backend y en la credencial «Backend SGD» de n8n)
+  responses:
+    Invalido:
+      description: Datos inválidos
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorFormulario"
+          example:
+            error: La categoría debe ser urgente, academico, administrativo, promociones u otros
+            campo: categoria
+            tipo: lista
+    NoExiste:
+      description: No existe la comunicación
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorFormulario"
+          example:
+            error: La comunicación 999999 no existe
+            campo: id
+            tipo: existente
+    SinToken:
+      description: Token de servicio ausente o inválido
+      content:
+        application/json:
+          example:
+            error: Token de servicio de n8n inválido
+  schemas:
+    ErrorFormulario:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Motivo legible
+        campo:
+          type: string
+          description: Campo con el problema
+        tipo:
+          type: string
+          description: "Tipo de problema: obligatorio, lista, existente, formato…"
+    Categoria:
+      type: string
+      enum:
+        - urgente
+        - academico
+        - administrativo
+        - promociones
+        - otros
+    Prioridad:
+      type: string
+      enum:
+        - alta
+        - media
+        - baja
+    CambiosTriaje:
+      type: object
+      minProperties: 1
+      properties:
+        leido:
+          type: boolean
+        categoria:
+          $ref: "#/components/schemas/Categoria"
+        prioridad:
+          $ref: "#/components/schemas/Prioridad"
+    CorreoTriaje:
+      type: object
+      properties:
+        id:
+          type: integer
+        consecutivo:
+          type: string
+          example: ENT-2026-000003
+        estado:
+          type: string
+          enum:
+            - nueva
+            - remitida
+            - respondida_dependencia
+            - devuelta
+            - cerrada
+            - anulada
+        fecha:
+          type: string
+          format: date-time
+        remitente_nombre:
+          type: string
+          nullable: true
+        remitente_correo:
+          type: string
+          nullable: true
+        asunto:
+          type: string
+        resumen:
+          type: string
+          nullable: true
+        categoria:
+          allOf:
+            - $ref: "#/components/schemas/Categoria"
+          nullable: true
+        prioridad:
+          allOf:
+            - $ref: "#/components/schemas/Prioridad"
+          nullable: true
+        triaje_origen:
+          type: string
+          enum:
+            - ia
+            - manual
+          nullable: true
+        leido:
+          type: boolean
+        dependencia_id:
+          type: integer
+          nullable: true
+    Estadisticas:
+      type: object
+      properties:
+        total:
+          type: integer
+        no_leidos:
+          type: integer
+        urgentes:
+          type: integer
+        por_categoria:
+          type: object
+          properties:
+            urgente:
+              type: integer
+            academico:
+              type: integer
+            administrativo:
+              type: integer
+            promociones:
+              type: integer
+            otros:
+              type: integer
+            sin_clasificar:
+              type: integer
+        por_prioridad:
+          type: object
+          properties:
+            alta:
+              type: integer
+            media:
+              type: integer
+            baja:
+              type: integer
+            sin_prioridad:
+              type: integer
