@@ -57,6 +57,16 @@ export const leer = {
     if (!Number.isInteger(n) || n <= 0) throw new SolicitudInvalida(`${campo} debe ser un entero positivo`, campo, "rango");
     return n;
   },
+  /** Booleano o null si no se envía (el valor debe llegar como booleano JSON). */
+  booleano(b: Cuerpo, campo: string, obligatorio = false): boolean | null {
+    const v = b[campo];
+    if (v === undefined || v === null) {
+      if (obligatorio) throw new SolicitudInvalida(`${campo} es obligatorio`, campo, "obligatorio");
+      return null;
+    }
+    if (typeof v !== "boolean") throw new SolicitudInvalida(`${campo} debe ser booleano`, campo, "tipo");
+    return v;
+  },
   /** Lista de enteros positivos ([] si no viene). */
   enteros(b: Cuerpo, campo: string, obligatorio = false): number[] {
     const v = b[campo] ?? [];

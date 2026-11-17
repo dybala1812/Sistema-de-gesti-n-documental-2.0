@@ -12,7 +12,7 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=dependencias /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+RUN npm run build -- --webpack
 
 FROM node:24-alpine AS ejecucion
 WORKDIR /app
