@@ -51,7 +51,7 @@ services:
       DATABASE_URL: postgresql://sgd_backend:sgd_backend_dev@db:5432/sgd
       DATABASE_POOL_MAX: "10"
       NOVA_API_URL: https://nova.uniautonoma.edu.co
-      N8N_SERVICE_TOKEN: cambiar_en_produccion
+      N8N_SERVICE_TOKEN: sgd-dev-token-pruebas-2026
       RAIZ_ARCHIVOS: /data/archivos
       PORT: "3000"
       ALLOWED_ORIGINS: http://localhost
