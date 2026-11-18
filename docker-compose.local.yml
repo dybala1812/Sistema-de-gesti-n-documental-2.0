@@ -1,0 +1,88 @@
+# SGD · Archivo Central — stack completo local con Docker.
+# Levanta PostgreSQL, aplica migraciones, backend (Next.js) y frontend (Vite + Nginx).
+# Uso:
+#   docker compose -f docker-compose.local.yml up -d --build
+# Acceso:
+#   Frontend: http://localhost
+#   Backend:  http://localhost:3000/api
+#   n8n:      http://localhost:5679 (opcional, en flujos n8n/docker-compose.yml)
+
+name: sgd-local
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: sgd
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_dev
+    volumes:
+      - datos_postgres_dev:/var/lib/postgresql
+      - ./database:/database:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sgd"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  migraciones:
+    image: postgres:18-alpine
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:postgres_dev@db:5432/sgd
+      SGD_BACKEND_PASSWORD: sgd_backend_dev
+    volumes:
+      - ./database:/database:ro
+    entrypoint: ["bash", "/database/scripts/instalar_local.sh"]
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backned_sistema_gestion_documental
+      dockerfile: Dockerfile
+    depends_on:
+      migraciones:
+        condition: service_completed_successfully
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://sgd_backend:sgd_backend_dev@db:5432/sgd
+      DATABASE_POOL_MAX: "10"
+      NOVA_API_URL: https://nova.uniautonoma.edu.co
+      N8N_SERVICE_TOKEN: cambiar_en_produccion
+      RAIZ_ARCHIVOS: /data/archivos
+      PORT: "3000"
+      ALLOWED_ORIGINS: http://localhost
+      SGD_DEV_TOKEN: sgd-dev-token-pruebas-2026
+      N8N_WEBHOOK_REMITIR_URL: ""
+      N8N_WEBHOOK_RESPONDER_URL: ""
+      N8N_WEBHOOK_RECORDATORIO_URL: ""
+    volumes:
+      - archivos_sgd:/data/archivos
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/salud >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  frontend:
+    build:
+      context: ../Gestion Documental/Gestion-Documental
+      dockerfile: Dockerfile
+      args:
+        VITE_SGD_API_URL: http://localhost:3000/api
+        VITE_API_URL: http://localhost:8000
+        VITE_LOGIN_TEMPORAL: "false"
+        VITE_DISABLE_CAPTCHA: "true"
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+
+volumes:
+  datos_postgres_dev:
+  archivos_sgd:
