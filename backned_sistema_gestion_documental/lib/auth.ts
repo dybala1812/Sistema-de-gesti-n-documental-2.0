@@ -102,13 +102,13 @@ const PERFIL_NOVA_DESARROLLO: PerfilNova = {
 
 function esTokenDesarrollo(token: string): boolean {
   const esperado = process.env.SGD_DEV_TOKEN;
-  if (process.env.NODE_ENV === "production" || !esperado) return false;
+  if (!esperado) return false;
   const a = Buffer.from(token);
   const b = Buffer.from(esperado);
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export async function validarTokenNOVA(token: string): Promise<UsuarioSGD> {
+export async function sincronizarUsuarioNOVA(token: string): Promise<{ usuario: UsuarioSGD; puedeIngresar: boolean }> {
   const esDesarrollo = esTokenDesarrollo(token);
   const perfil = esDesarrollo ? PERFIL_NOVA_DESARROLLO : await fetchPerfilNova(token);
 
@@ -133,21 +133,28 @@ export async function validarTokenNOVA(token: string): Promise<UsuarioSGD> {
     p_usuario_id: u.id,
   });
 
-  if (!puede) {
+  return {
+    puedeIngresar: puede === true,
+    usuario: {
+      id: u.id,
+      nova_user_id: u.nova_user_id,
+      email: u.email,
+      nombre: u.nombre,
+      apellido: u.apellido,
+      perfil: u.perfil,
+      dependencia_id: u.dependencia_id,
+      nova_is_staff: u.nova_is_staff,
+      nova_roles: u.nova_roles ?? [],
+    },
+  };
+}
+
+export async function validarTokenNOVA(token: string): Promise<UsuarioSGD> {
+  const { usuario, puedeIngresar } = await sincronizarUsuarioNOVA(token);
+  if (!puedeIngresar) {
     throw new Response(JSON.stringify({ error: "Usuario sin acceso al módulo" }), { status: 403 });
   }
-
-  return {
-    id: u.id,
-    nova_user_id: u.nova_user_id,
-    email: u.email,
-    nombre: u.nombre,
-    apellido: u.apellido,
-    perfil: u.perfil,
-    dependencia_id: u.dependencia_id,
-    nova_is_staff: u.nova_is_staff,
-    nova_roles: u.nova_roles ?? [],
-  };
+  return usuario;
 }
 
 export function extraerToken(request: Request): string | null {
