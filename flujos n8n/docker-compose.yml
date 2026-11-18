@@ -1,0 +1,77 @@
+name: sgd-n8n
+
+# n8n de la Bandeja de comunicaciones (F1–F5) para correr en este PC contra el backend local.
+#   docker compose up -d                 → levanta Postgres + n8n (http://localhost:5679)
+#   docker compose run --rm importar     → carga credenciales y flujos desde .env y F*.json
+# Guía: README.md de esta carpeta.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Falta POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?Falta POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      - "${N8N_HTTP_PORT:-5679}:5678"
+    environment: &n8n_env
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?Falta N8N_ENCRYPTION_KEY}
+      N8N_HOST: ${N8N_HOST:-localhost}
+      N8N_PORT: ${N8N_PORT:-5678}
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
+      WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://localhost:${N8N_HTTP_PORT:-5679}/}
+      N8N_EDITOR_BASE_URL: ${N8N_EDITOR_BASE_URL:-http://localhost:${N8N_HTTP_PORT:-5679}/}
+      GENERIC_TIMEZONE: America/Bogota
+      TZ: America/Bogota
+      N8N_DIAGNOSTICS_ENABLED: "false"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Importa credenciales y flujos (se ejecuta a mano):
+  #   docker compose run --rm importar [credenciales] [flujos]
+  importar:
+    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-latest}
+    profiles: ["importar"]
+    env_file: .env
+    environment: *n8n_env
+    entrypoint: ["node", "/scripts/importar.js"]
+    volumes:
+      - n8n_data:/home/node/.n8n
+      # Los flujos F1–F5 están en esta misma carpeta (el script solo toma F<n>_*.json).
+      - ./F1_correo_entrante.json:/flujos/F1_correo_entrante.json:ro
+      - ./F2_remitir_y_devolver.json:/flujos/F2_remitir_y_devolver.json:ro
+      - ./F3_responder_al_remitente.json:/flujos/F3_responder_al_remitente.json:ro
+      - ./F4_recordatorios_y_adicionales.json:/flujos/F4_recordatorios_y_adicionales.json:ro
+      - ./F5_envio_de_correo.json:/flujos/F5_envio_de_correo.json:ro
+      - ./F7_api_triaje.json:/flujos/F7_api_triaje.json:ro
+      - ./scripts:/scripts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  n8n_data:
