@@ -13,8 +13,20 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "http://localhost:5173")
   .map(o => o.trim())
   .filter(Boolean);
 
+/**
+ * Devuelve el origin normalizado (scheme + host + port), sin path ni query.
+ * Algunos proxies o navegadores pueden enviar el header Origin con una ruta,
+ * lo que rompe CORS porque Access-Control-Allow-Origin debe ser un origin puro.
+ */
 function getOrigin(request: NextRequest): string | null {
-  return request.headers.get("origin");
+  const raw = request.headers.get("origin");
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    return url.origin;
+  } catch {
+    return raw;
+  }
 }
 
 // Solo en desarrollo: el frontend abierto desde otro equipo de la red local (p. ej. la app móvil
